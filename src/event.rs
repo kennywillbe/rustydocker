@@ -25,15 +25,23 @@ impl EventHandler {
                 if event::poll(tick_duration).unwrap_or(false) {
                     match event::read() {
                         Ok(CrosstermEvent::Key(key)) => {
-                            if tx_clone.send(AppEvent::Key(key)).is_err() { break; }
+                            if tx_clone.send(AppEvent::Key(key)).is_err() {
+                                break;
+                            }
                         }
                         Ok(CrosstermEvent::Mouse(mouse)) => {
-                            if tx_clone.send(AppEvent::Mouse(mouse)).is_err() { break; }
+                            if tx_clone.send(AppEvent::Mouse(mouse)).is_err() {
+                                break;
+                            }
                         }
                         _ => {}
                     }
+                } else {
+                    // Only send Tick when no real event was received
+                    if tx_clone.send(AppEvent::Tick).is_err() {
+                        break;
+                    }
                 }
-                if tx_clone.send(AppEvent::Tick).is_err() { break; }
             }
         });
 
@@ -41,6 +49,9 @@ impl EventHandler {
     }
 
     pub async fn next(&mut self) -> Result<AppEvent> {
-        self.rx.recv().await.ok_or_else(|| anyhow::anyhow!("Event channel closed"))
+        self.rx
+            .recv()
+            .await
+            .ok_or_else(|| anyhow::anyhow!("Event channel closed"))
     }
 }

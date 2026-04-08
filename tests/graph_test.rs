@@ -8,7 +8,10 @@ fn test_simple_dependency_graph() {
         ("db".to_string(), vec![]),
     ];
     let lines = build_graph_lines(&services, Some("api"));
-    let text: String = lines.iter().map(|l| l.iter().map(|(s, _)| s.as_str()).collect::<String>()).collect();
+    let text: String = lines
+        .iter()
+        .map(|l| l.iter().map(|(s, _)| s.as_str()).collect::<String>())
+        .collect();
     assert!(text.contains("web"));
     assert!(text.contains("api"));
     assert!(text.contains("db"));
@@ -16,10 +19,11 @@ fn test_simple_dependency_graph() {
 
 #[test]
 fn test_graph_no_deps() {
-    let services = vec![
-        ("app".to_string(), vec![]),
-    ];
+    let services = vec![("app".to_string(), vec![])];
     let lines = build_graph_lines(&services, None);
-    let text: String = lines.iter().map(|l| l.iter().map(|(s, _)| s.as_str()).collect::<String>()).collect();
+    let text: String = lines
+        .iter()
+        .map(|l| l.iter().map(|(s, _)| s.as_str()).collect::<String>())
+        .collect();
     assert!(text.contains("app"));
 }

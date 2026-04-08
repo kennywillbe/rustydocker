@@ -1,10 +1,16 @@
 [package]
 name = "rustydocker"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
+rust-version = "1.75"
 description = "A fast, compose-first Docker TUI written in Rust"
 license = "MIT"
 repository = "https://github.com/kennywillbe/rustydocker"
+homepage = "https://github.com/kennywillbe/rustydocker"
+readme = "README.md"
+keywords = ["docker", "tui", "container", "compose", "terminal"]
+categories = ["command-line-utilities"]
+exclude = [".github/", "docs/", "assets/"]
 
 [dependencies]
 bollard = "0.18"
@@ -17,6 +23,11 @@ anyhow = "1"
 futures-util = "0.3"
 chrono = "0.4"
 unicode-width = "0.2"
+toml = "0.8"
+dirs = "5"
+clap = { version = "4", features = ["derive"] }
+regex = "1"
+fuzzy-matcher = "0.3"
 
 [dev-dependencies]
 serde_json = "1"

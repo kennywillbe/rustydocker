@@ -5,10 +5,7 @@ use ratatui::prelude::*;
 use ratatui::widgets::Paragraph;
 
 /// Each line is a Vec of (text, highlighted) spans
-pub fn build_graph_lines(
-    services: &[(String, Vec<String>)],
-    selected: Option<&str>,
-) -> Vec<Vec<(String, bool)>> {
+pub fn build_graph_lines(services: &[(String, Vec<String>)], selected: Option<&str>) -> Vec<Vec<(String, bool)>> {
     if services.is_empty() {
         return vec![vec![("No services found".to_string(), false)]];
     }
@@ -19,7 +16,7 @@ pub fn build_graph_lines(
     // Find roots (no dependencies)
     let roots: Vec<&str> = all_names
         .iter()
-        .filter(|n| dep_map.get(*n).is_none_or(|d| d.is_empty()))
+        .filter(|n| dep_map.get(*n).map_or(true, |d| d.is_empty()))
         .copied()
         .collect();
 
@@ -37,11 +34,15 @@ pub fn build_graph_lines(
             .iter()
             .filter(|n| {
                 !placed.contains(*n)
-                    && dep_map.get(*n).is_none_or(|deps| deps.iter().all(|d| placed.contains(d.as_str())))
+                    && dep_map
+                        .get(*n)
+                        .map_or(true, |deps| deps.iter().all(|d| placed.contains(d.as_str())))
             })
             .copied()
             .collect();
-        if next_level.is_empty() { break; }
+        if next_level.is_empty() {
+            break;
+        }
         placed.extend(next_level.iter());
         levels.push(next_level);
     }
@@ -59,7 +60,9 @@ pub fn build_graph_lines(
     for (i, level) in levels.iter().enumerate() {
         let mut line: Vec<(String, bool)> = vec![];
         for (j, name) in level.iter().enumerate() {
-            if j > 0 { line.push(("   ".to_string(), false)); }
+            if j > 0 {
+                line.push(("   ".to_string(), false));
+            }
             let is_selected = selected == Some(*name);
             line.push((format!("[{}]", name), is_selected));
         }
@@ -67,7 +70,9 @@ pub fn build_graph_lines(
 
         if i + 1 < levels.len() {
             let has_arrows = levels[i + 1].iter().any(|next| {
-                dep_map.get(next).is_some_and(|deps| deps.iter().any(|d| level.contains(&d.as_str())))
+                dep_map
+                    .get(next)
+                    .is_some_and(|deps| deps.iter().any(|d| level.contains(&d.as_str())))
             });
             if has_arrows {
                 lines.push(vec![("  │".to_string(), false), ("  ▼".to_string(), false)]);
@@ -84,7 +89,8 @@ pub fn render_graph(f: &mut Frame, area: Rect, app: &App) {
     }
 
     let selected_name = app.selected_container().and_then(|c| {
-        c.names.as_ref()
+        c.names
+            .as_ref()
             .and_then(|n| n.first())
             .map(|n| n.trim_start_matches('/').to_string())
     });
@@ -102,24 +108,33 @@ pub fn render_graph(f: &mut Frame, area: Rect, app: &App) {
 
     let graph_lines = build_graph_lines(&all_services, selected_name.as_deref());
 
-    let lines: Vec<Line> = graph_lines.iter().map(|spans| {
-        let mut result_spans: Vec<Span> = vec![];
-        for (text, highlighted) in spans {
-            if *highlighted {
-                result_spans.push(Span::styled(text.clone(), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)));
-            } else {
-                result_spans.push(Span::raw(text.clone()));
-            }
-            // Show image name next to service nodes
-            if text.starts_with('[') && text.ends_with(']') {
-                let svc_name = &text[1..text.len()-1];
-                if let Some(img) = service_images.get(svc_name) {
-                    result_spans.push(Span::styled(format!(" ({})", img), Style::default().fg(Color::DarkGray)));
+    let lines: Vec<Line> = graph_lines
+        .iter()
+        .map(|spans| {
+            let mut result_spans: Vec<Span> = vec![];
+            for (text, highlighted) in spans {
+                if *highlighted {
+                    result_spans.push(Span::styled(
+                        text.clone(),
+                        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                    ));
+                } else {
+                    result_spans.push(Span::raw(text.clone()));
+                }
+                // Show image name next to service nodes
+                if text.starts_with('[') && text.ends_with(']') {
+                    let svc_name = &text[1..text.len() - 1];
+                    if let Some(img) = service_images.get(svc_name) {
+                        result_spans.push(Span::styled(
+                            format!(" ({})", img),
+                            Style::default().fg(Color::DarkGray),
+                        ));
+                    }
                 }
             }
-        }
-        Line::from(result_spans)
-    }).collect();
+            Line::from(result_spans)
+        })
+        .collect();
 
     f.render_widget(Paragraph::new(lines), area);
 }

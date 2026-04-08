@@ -9,10 +9,9 @@ pub struct StatsSnapshot {
 }
 
 pub fn parse_stats(stats: &Stats) -> StatsSnapshot {
-    let cpu_delta = stats.cpu_stats.cpu_usage.total_usage as f64
-        - stats.precpu_stats.cpu_usage.total_usage as f64;
-    let system_delta = stats.cpu_stats.system_cpu_usage.unwrap_or(0) as f64
-        - stats.precpu_stats.system_cpu_usage.unwrap_or(0) as f64;
+    let cpu_delta = stats.cpu_stats.cpu_usage.total_usage as f64 - stats.precpu_stats.cpu_usage.total_usage as f64;
+    let system_delta =
+        stats.cpu_stats.system_cpu_usage.unwrap_or(0) as f64 - stats.precpu_stats.system_cpu_usage.unwrap_or(0) as f64;
     let num_cpus = stats.cpu_stats.online_cpus.unwrap_or(1) as f64;
     let cpu_percent = if system_delta > 0.0 {
         (cpu_delta / system_delta) * num_cpus * 100.0
@@ -20,7 +19,12 @@ pub fn parse_stats(stats: &Stats) -> StatsSnapshot {
         0.0
     };
 
-    let memory_bytes = stats.memory_stats.usage.unwrap_or(0) as f64;
+    use bollard::container::MemoryStatsStats;
+    let cache = match &stats.memory_stats.stats {
+        Some(MemoryStatsStats::V1(v1)) => v1.cache as f64,
+        _ => 0.0,
+    };
+    let memory_bytes = (stats.memory_stats.usage.unwrap_or(0) as f64 - cache).max(0.0);
     let memory_limit = stats.memory_stats.limit.unwrap_or(1) as f64;
     let memory_mb = memory_bytes / 1_048_576.0;
     let memory_limit_mb = memory_limit / 1_048_576.0;

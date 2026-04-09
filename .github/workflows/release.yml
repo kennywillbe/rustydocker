@@ -19,6 +19,7 @@ jobs:
         id: release
         with:
           release-type: rust
+          token: ${{ secrets.PAT_TOKEN }}
 
   build:
     needs: release-please

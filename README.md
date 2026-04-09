@@ -40,13 +40,13 @@ A fast, compose-first Docker TUI written in Rust. A modern alternative to lazydo
 ### Binary (recommended)
 
 ```bash
-curl https://raw.githubusercontent.com/kennywillbe/rustydocker/main/install.sh | bash
+curl https://raw.githubusercontent.com/kennywillbe/rustydocker/master/install.sh | bash
 ```
 
 Or specify a custom install directory:
 
 ```bash
-DIR=/usr/local/bin curl https://raw.githubusercontent.com/kennywillbe/rustydocker/main/install.sh | bash
+DIR=/usr/local/bin curl https://raw.githubusercontent.com/kennywillbe/rustydocker/master/install.sh | bash
 ```
 
 ### From source

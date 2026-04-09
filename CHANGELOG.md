@@ -7,6 +7,13 @@
 
 * use PAT for release-please CI trigger ([#15](https://github.com/kennywillbe/rustydocker/issues/15)) ([77aea83](https://github.com/kennywillbe/rustydocker/commit/77aea8393f22a6e1fa544b188c53bf1dd0edeec6))
 
+## [0.2.1](https://github.com/kennywillbe/rustydocker/compare/v0.2.0...v0.2.1) (2026-04-09)
+
+
+### Bug Fixes
+
+* use PAT for release-please CI trigger ([#15](https://github.com/kennywillbe/rustydocker/issues/15)) ([77aea83](https://github.com/kennywillbe/rustydocker/commit/77aea8393f22a6e1fa544b188c53bf1dd0edeec6))
+
 ## 0.2.0 (2026-04-09)
 
 

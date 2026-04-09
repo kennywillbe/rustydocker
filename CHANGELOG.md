@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.0 (2026-04-09)
+
+
+### Features
+
+* rustydocker — a fast, compose-first Docker TUI written in Rust ([78ef268](https://github.com/kennywillbe/rustydocker/commit/78ef26891835952cc33affe77cb78eff773afd8e))
+
 ## 0.2.0 (2026-04-09)
 
 

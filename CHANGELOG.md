@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/kennywillbe/rustydocker/compare/v0.2.0...v0.2.1) (2026-04-09)
+
+
+### Bug Fixes
+
+* bump ci workflow versions ([#13](https://github.com/kennywillbe/rustydocker/issues/13)) ([6bc9353](https://github.com/kennywillbe/rustydocker/commit/6bc93536c705a5a43265f3a02c762d178465bcea))
+
 ## 0.2.0 (2026-04-09)
 
 

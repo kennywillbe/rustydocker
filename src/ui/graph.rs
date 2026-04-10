@@ -83,8 +83,12 @@ pub fn build_graph_lines(services: &[(String, Vec<String>)], selected: Option<&s
 }
 
 pub fn render_graph(f: &mut Frame, area: Rect, app: &App) {
+    let t = &app.theme;
     if app.projects.is_empty() {
-        f.render_widget(Paragraph::new("No compose projects found"), area);
+        f.render_widget(
+            Paragraph::new("No compose projects found").style(Style::default().fg(t.fg_dim)),
+            area,
+        );
         return;
     }
 
@@ -116,19 +120,18 @@ pub fn render_graph(f: &mut Frame, area: Rect, app: &App) {
                 if *highlighted {
                     result_spans.push(Span::styled(
                         text.clone(),
-                        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                        Style::default().fg(t.accent_primary).add_modifier(Modifier::BOLD),
                     ));
+                } else if text.starts_with('[') && text.ends_with(']') {
+                    result_spans.push(Span::styled(text.clone(), Style::default().fg(t.fg_bright)));
                 } else {
-                    result_spans.push(Span::raw(text.clone()));
+                    // Arrows and separators
+                    result_spans.push(Span::styled(text.clone(), Style::default().fg(t.rule)));
                 }
-                // Show image name next to service nodes
                 if text.starts_with('[') && text.ends_with(']') {
                     let svc_name = &text[1..text.len() - 1];
                     if let Some(img) = service_images.get(svc_name) {
-                        result_spans.push(Span::styled(
-                            format!(" ({})", img),
-                            Style::default().fg(Color::DarkGray),
-                        ));
+                        result_spans.push(Span::styled(format!(" ({})", img), Style::default().fg(t.fg_dim)));
                     }
                 }
             }

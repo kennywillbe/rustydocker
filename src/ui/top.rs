@@ -1,15 +1,17 @@
 use crate::app::App;
+use crate::ui::theme;
 use ratatui::layout::Constraint;
 use ratatui::prelude::*;
 use ratatui::widgets::{Cell, Paragraph, Row, Table};
 
 pub fn render_top(f: &mut Frame, area: Rect, app: &App) {
+    let t = &app.theme;
     let top_data = match &app.container_top {
         Some(data) if data.len() > 1 => data,
         _ => {
             f.render_widget(
                 Paragraph::new("No processes (container may not be running)")
-                    .style(Style::default().fg(Color::DarkGray))
+                    .style(theme::dim_label(t))
                     .alignment(Alignment::Center),
                 area,
             );
@@ -17,11 +19,9 @@ pub fn render_top(f: &mut Frame, area: Rect, app: &App) {
         }
     };
 
+    let header_cell = theme::header_label(t);
     let headers = &top_data[0];
-    let header_row =
-        Row::new(headers.iter().map(|h| {
-            Cell::from(format!(" {}", h)).style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
-        }));
+    let header_row = Row::new(headers.iter().map(|h| Cell::from(format!(" {}", h)).style(header_cell)));
 
     let rows: Vec<Row> = top_data[1..]
         .iter()
@@ -29,7 +29,7 @@ pub fn render_top(f: &mut Frame, area: Rect, app: &App) {
             Row::new(
                 process
                     .iter()
-                    .map(|col| Cell::from(format!(" {}", col)).style(Style::default().fg(Color::White))),
+                    .map(|col| Cell::from(format!(" {}", col)).style(Style::default().fg(t.fg))),
             )
         })
         .collect();

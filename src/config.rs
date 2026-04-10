@@ -31,6 +31,9 @@ pub struct AppConfig {
     #[serde(default)]
     pub hooks: Vec<Hook>,
     pub docker_host: Option<String>,
+    /// Theme name. Known values: `"ember"` (default) and `"classic"`.
+    #[serde(default = "default_theme")]
+    pub theme: String,
 }
 
 fn default_cpu_alert_threshold() -> f64 {
@@ -39,6 +42,10 @@ fn default_cpu_alert_threshold() -> f64 {
 
 fn default_memory_alert_threshold() -> f64 {
     90.0
+}
+
+fn default_theme() -> String {
+    "ember".to_string()
 }
 
 impl Default for AppConfig {
@@ -52,6 +59,7 @@ impl Default for AppConfig {
             memory_alert_threshold: 90.0,
             hooks: vec![],
             docker_host: None,
+            theme: default_theme(),
         }
     }
 }

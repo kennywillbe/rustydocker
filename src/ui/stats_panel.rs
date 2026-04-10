@@ -1,8 +1,16 @@
+//! Compact, sparkline-based statistics view.
+//!
+//! ```text
+//! CPU ▁▂▄█▆▃▂▁▂▃▅▇█▆▃▁▂▄▆▇   42.1%
+//! MEM ▁▁▂▃▄▄▄▅▅▅▆▆▆▆▆▇▇▇▇▇   68.3%  !
+//! NET ▂▃▂▄▃▅▆▄▃▂▃▄▅▆▇▅▄▃▂▂   128 KB/s ↑
+//! ```
+
 use crate::app::App;
+use crate::ui::theme::{self as thm, icons, sparkline_iter, Theme};
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::prelude::*;
-use ratatui::symbols;
-use ratatui::widgets::{Axis, Block, Borders, Chart, Dataset, GraphType, Paragraph};
+use ratatui::widgets::Paragraph;
 
 pub(super) fn format_bytes(mb: f64) -> String {
     if mb >= 1024.0 {
@@ -12,13 +20,19 @@ pub(super) fn format_bytes(mb: f64) -> String {
     }
 }
 
+/// Width used for the embedded sparkline. Chosen to match the landing-site
+/// mock (20 characters).
+const SPARK_WIDTH: usize = 20;
+
 pub fn render_stats(f: &mut Frame, area: Rect, app: &App) {
+    let t = &app.theme;
+
     let container_id = match app.selected_container_id() {
         Some(id) => id,
         None => {
             f.render_widget(
                 Paragraph::new("No container selected")
-                    .style(Style::default().fg(Color::DarkGray))
+                    .style(thm::dim_label(t))
                     .alignment(Alignment::Center),
                 area,
             );
@@ -30,8 +44,8 @@ pub fn render_stats(f: &mut Frame, area: Rect, app: &App) {
         Some(h) => h,
         None => {
             f.render_widget(
-                Paragraph::new("Waiting for stats...")
-                    .style(Style::default().fg(Color::DarkGray))
+                Paragraph::new("Waiting for stats…")
+                    .style(thm::dim_label(t))
                     .alignment(Alignment::Center),
                 area,
             );
@@ -39,163 +53,188 @@ pub fn render_stats(f: &mut Frame, area: Rect, app: &App) {
         }
     };
 
-    let sections = Layout::default()
+    let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Ratio(1, 3),
-            Constraint::Ratio(1, 3),
-            Constraint::Ratio(1, 3),
+            Constraint::Length(1), // blank
+            Constraint::Length(1), // CPU
+            Constraint::Length(1), // MEM
+            Constraint::Length(1), // NET
+            Constraint::Length(1), // blank
+            Constraint::Length(1), // rule
+            Constraint::Length(1), // summary heading
+            Constraint::Length(1), // summary row 1
+            Constraint::Length(1), // summary row 2
+            Constraint::Min(0),    // padding
         ])
         .split(area);
 
-    render_cpu(f, sections[0], history);
-    render_mem(f, sections[1], history);
-    render_net(f, sections[2], history);
+    render_cpu_line(f, rows[1], app, history);
+    render_mem_line(f, rows[2], app, history);
+    render_net_line(f, rows[3], app, history);
+
+    let rule_len = (area.width as usize).saturating_sub(2);
+    f.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::raw(" "),
+            Span::styled(thm::rule(rule_len), thm::section_rule(t)),
+        ])),
+        rows[5],
+    );
+
+    render_summary(f, [rows[6], rows[7], rows[8]], app, container_id);
 }
 
-pub(super) fn to_chart_data<'a>(values: impl IntoIterator<Item = &'a f64>) -> Vec<(f64, f64)> {
-    values.into_iter().enumerate().map(|(i, v)| (i as f64, *v)).collect()
-}
-
-pub(super) fn render_cpu(f: &mut Frame, area: Rect, history: &crate::app::StatsHistory) {
-    let current = history.cpu.back().unwrap_or(&0.0);
-    let data = to_chart_data(&history.cpu);
-
-    let title = Line::from(vec![
-        Span::styled(" CPU ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
-        Span::styled(format!("{:.1}% ", current), Style::default().fg(Color::White)),
-    ]);
-
-    let dataset = Dataset::default()
-        .marker(symbols::Marker::Braille)
-        .graph_type(GraphType::Line)
-        .style(Style::default().fg(Color::Green))
-        .data(&data);
-
-    let chart = Chart::new(vec![dataset])
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::DarkGray))
-                .title(title),
+/// Pick the (sparkline, value) styles for a metric based on whether it is
+/// currently above its alert threshold.
+fn metric_styles(t: &Theme, alerting: bool) -> (Style, Style) {
+    if alerting {
+        (
+            Style::default().fg(t.err),
+            Style::default().fg(t.err).add_modifier(Modifier::BOLD),
         )
-        .x_axis(Axis::default().bounds([0.0, 60.0]))
-        .y_axis(Axis::default().bounds([0.0, 100.0]).labels(vec![
-            Span::styled("0", Style::default().fg(Color::DarkGray)),
-            Span::styled("100%", Style::default().fg(Color::DarkGray)),
-        ]));
-
-    f.render_widget(chart, area);
+    } else {
+        (Style::default().fg(t.accent_primary), Style::default().fg(t.fg_bright))
+    }
 }
 
-pub(super) fn render_mem(f: &mut Frame, area: Rect, history: &crate::app::StatsHistory) {
-    let current = history.memory.back().unwrap_or(&0.0);
+fn render_cpu_line(f: &mut Frame, area: Rect, app: &App, history: &crate::app::StatsHistory) {
+    let t = &app.theme;
+    let current = history.cpu.back().copied().unwrap_or(0.0);
+    let spark = sparkline_iter(history.cpu.iter().copied(), SPARK_WIDTH, 0.0, 100.0);
+
+    let alerting = current >= app.cpu_alert_threshold;
+    let (spark_style, value_style) = metric_styles(t, alerting);
+
+    let mut spans = vec![
+        Span::raw(" "),
+        Span::styled("CPU ", Style::default().fg(t.accent_header)),
+        Span::styled(spark, spark_style),
+        Span::raw("   "),
+        Span::styled(format!("{:5.1}%", current), value_style),
+    ];
+    if alerting {
+        spans.push(Span::raw("  "));
+        spans.push(Span::styled(
+            icons::ALERT,
+            Style::default().fg(t.err).add_modifier(Modifier::BOLD),
+        ));
+    }
+    f.render_widget(Paragraph::new(Line::from(spans)), area);
+}
+
+fn render_mem_line(f: &mut Frame, area: Rect, app: &App, history: &crate::app::StatsHistory) {
+    let t = &app.theme;
+    let current = history.memory.back().copied().unwrap_or(0.0);
     let limit = history.memory_limit_mb;
     let pct = if limit > 0.0 { current / limit * 100.0 } else { 0.0 };
 
-    let title = Line::from(vec![
-        Span::styled(" MEM ", Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD)),
-        Span::styled(
-            format!("{}/{} ({:.1}%) ", format_bytes(*current), format_bytes(limit), pct),
-            Style::default().fg(Color::White),
-        ),
-    ]);
-
-    // Scale to percentage of limit
-    let pct_data: Vec<(f64, f64)> = if limit > 0.0 {
-        history
-            .memory
-            .iter()
-            .enumerate()
-            .map(|(i, v)| (i as f64, v / limit * 100.0))
-            .collect()
-    } else {
-        history.memory.iter().enumerate().map(|(i, v)| (i as f64, *v)).collect()
-    };
-    let data = pct_data;
-
-    let y_max = if limit > 0.0 {
-        100.0
-    } else {
-        data.iter().map(|(_, v)| *v).fold(1.0_f64, f64::max)
-    };
-
-    let dataset = Dataset::default()
-        .marker(symbols::Marker::Braille)
-        .graph_type(GraphType::Line)
-        .style(Style::default().fg(Color::Blue))
-        .data(&data);
-
-    let y_label = if limit > 0.0 {
-        format_bytes(limit)
-    } else {
-        format!("{:.0}", y_max)
-    };
-
-    let chart = Chart::new(vec![dataset])
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::DarkGray))
-                .title(title),
+    let spark = if limit > 0.0 {
+        sparkline_iter(
+            history.memory.iter().map(|v| v / limit * 100.0),
+            SPARK_WIDTH,
+            0.0,
+            100.0,
         )
-        .x_axis(Axis::default().bounds([0.0, 60.0]))
-        .y_axis(Axis::default().bounds([0.0, y_max]).labels(vec![
-            Span::styled("0", Style::default().fg(Color::DarkGray)),
-            Span::styled(y_label, Style::default().fg(Color::DarkGray)),
-        ]));
+    } else {
+        sparkline_iter(history.memory.iter().copied(), SPARK_WIDTH, 0.0, 100.0)
+    };
 
-    f.render_widget(chart, area);
+    let alerting = pct >= app.memory_alert_threshold;
+    let (spark_style, value_style) = metric_styles(t, alerting);
+
+    let suffix = if limit > 0.0 {
+        format!("{:5.1}%  ({} / {})", pct, format_bytes(current), format_bytes(limit))
+    } else {
+        format_bytes(current)
+    };
+
+    let mut spans = vec![
+        Span::raw(" "),
+        Span::styled("MEM ", Style::default().fg(t.accent_header)),
+        Span::styled(spark, spark_style),
+        Span::raw("   "),
+        Span::styled(suffix, value_style),
+    ];
+    if alerting {
+        spans.push(Span::raw("  "));
+        spans.push(Span::styled(
+            icons::ALERT,
+            Style::default().fg(t.err).add_modifier(Modifier::BOLD),
+        ));
+    }
+    f.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
-pub(super) fn render_net(f: &mut Frame, area: Rect, history: &crate::app::StatsHistory) {
-    let rx_current = history.net_rx.back().unwrap_or(&0.0) / 1024.0;
-    let tx_current = history.net_tx.back().unwrap_or(&0.0) / 1024.0;
+fn render_net_line(f: &mut Frame, area: Rect, app: &App, history: &crate::app::StatsHistory) {
+    let t = &app.theme;
+    let dim = thm::dim_label(t);
 
-    let title = Line::from(vec![
-        Span::styled(
-            " NET ",
-            Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(format!("RX {:.1} KB/s ", rx_current), Style::default().fg(Color::Cyan)),
-        Span::styled(
-            format!("TX {:.1} KB/s ", tx_current),
-            Style::default().fg(Color::Yellow),
-        ),
-    ]);
+    let rx_kb = history.net_rx.back().copied().unwrap_or(0.0) / 1024.0;
+    let tx_kb = history.net_tx.back().copied().unwrap_or(0.0) / 1024.0;
 
-    let rx_kb: Vec<f64> = history.net_rx.iter().map(|v| v / 1024.0).collect();
-    let tx_kb: Vec<f64> = history.net_tx.iter().map(|v| v / 1024.0).collect();
-    let rx_data = to_chart_data(&rx_kb);
-    let tx_data = to_chart_data(&tx_kb);
+    let combined_iter = || {
+        history
+            .net_rx
+            .iter()
+            .zip(history.net_tx.iter())
+            .map(|(rx, tx)| (rx + tx) / 1024.0)
+    };
+    let max = combined_iter().fold(1.0_f64, f64::max);
+    let spark = sparkline_iter(combined_iter(), SPARK_WIDTH, 0.0, max.max(1.0));
 
-    let y_max = rx_kb.iter().chain(tx_kb.iter()).cloned().fold(1.0_f64, f64::max);
-
-    let datasets = vec![
-        Dataset::default()
-            .marker(symbols::Marker::Braille)
-            .graph_type(GraphType::Line)
-            .style(Style::default().fg(Color::Cyan))
-            .data(&rx_data),
-        Dataset::default()
-            .marker(symbols::Marker::Braille)
-            .graph_type(GraphType::Line)
-            .style(Style::default().fg(Color::Yellow))
-            .data(&tx_data),
+    let spans = vec![
+        Span::raw(" "),
+        Span::styled("NET ", Style::default().fg(t.accent_header)),
+        Span::styled(spark, Style::default().fg(t.accent_primary)),
+        Span::raw("   "),
+        Span::styled(format!("{:7.1} KB/s", rx_kb + tx_kb), Style::default().fg(t.fg_bright)),
+        Span::raw("  "),
+        Span::styled(icons::ARROW_UP, Style::default().fg(t.ok)),
+        Span::styled(format!(" {:5.1}", tx_kb), dim),
+        Span::raw("  "),
+        Span::styled(icons::ARROW_DOWN, Style::default().fg(t.warn)),
+        Span::styled(format!(" {:5.1}", rx_kb), dim),
     ];
+    f.render_widget(Paragraph::new(Line::from(spans)), area);
+}
 
-    let chart = Chart::new(datasets)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::DarkGray))
-                .title(title),
-        )
-        .x_axis(Axis::default().bounds([0.0, 60.0]))
-        .y_axis(Axis::default().bounds([0.0, y_max]).labels(vec![
-            Span::styled("0", Style::default().fg(Color::DarkGray)),
-            Span::styled(format!("{:.0} KB/s", y_max), Style::default().fg(Color::DarkGray)),
-        ]));
+fn render_summary(f: &mut Frame, areas: [Rect; 3], app: &App, container_id: &str) {
+    let t = &app.theme;
+    let label = Style::default().fg(t.accent_header);
 
-    f.render_widget(chart, area);
+    f.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::raw(" "),
+            Span::styled("SUMMARY", thm::section_header(t, false)),
+        ])),
+        areas[0],
+    );
+
+    let container = app.containers.iter().find(|c| c.id.as_deref() == Some(container_id));
+    let uptime = container.and_then(|c| c.status.as_deref()).unwrap_or("—");
+    let state = container.and_then(|c| c.state.as_deref()).unwrap_or("—");
+    let pid_count = app.container_top.as_ref().map(|rows| rows.len()).unwrap_or(0);
+
+    let row1 = Line::from(vec![
+        Span::raw(" "),
+        Span::styled("state   ", label),
+        Span::styled(state.to_string(), Style::default().fg(t.fg_bright)),
+        Span::raw("    "),
+        Span::styled("uptime  ", label),
+        Span::styled(uptime.to_string(), Style::default().fg(t.fg)),
+    ]);
+    f.render_widget(Paragraph::new(row1), areas[1]);
+
+    let pid_label = if pid_count > 0 {
+        format!("{} processes", pid_count)
+    } else {
+        "(open Top tab)".to_string()
+    };
+    let row2 = Line::from(vec![
+        Span::raw(" "),
+        Span::styled("pids    ", label),
+        Span::styled(pid_label, Style::default().fg(t.fg)),
+    ]);
+    f.render_widget(Paragraph::new(row2), areas[2]);
 }

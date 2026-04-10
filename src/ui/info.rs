@@ -1,15 +1,17 @@
 use crate::app::App;
+use crate::ui::theme;
 use ratatui::layout::Constraint;
 use ratatui::prelude::*;
 use ratatui::widgets::{Cell, Paragraph, Row, Table};
 
 pub fn render_info(f: &mut Frame, area: Rect, app: &App) {
+    let t = &app.theme;
     let container = match app.selected_container() {
         Some(c) => c,
         None => {
             f.render_widget(
                 Paragraph::new("No container selected")
-                    .style(Style::default().fg(Color::DarkGray))
+                    .style(theme::dim_label(t))
                     .alignment(Alignment::Center),
                 area,
             );
@@ -17,9 +19,9 @@ pub fn render_info(f: &mut Frame, area: Rect, app: &App) {
         }
     };
 
-    let key_style = Style::default().fg(Color::Cyan);
-    let val_style = Style::default().fg(Color::White);
-    let secondary_style = Style::default().fg(Color::DarkGray);
+    let key_style = theme::label_cell(t);
+    let val_style = Style::default().fg(t.fg);
+    let secondary_style = theme::dim_label(t);
 
     let mut rows: Vec<Row> = Vec::new();
 
@@ -59,15 +61,8 @@ pub fn render_info(f: &mut Frame, area: Rect, app: &App) {
         Cell::from(image.to_string()).style(val_style),
     ]));
 
-    // State
     let state = container.state.as_deref().unwrap_or("N/A");
-    let state_color = match state {
-        "running" => Color::Green,
-        "exited" => Color::Red,
-        "restarting" => Color::Yellow,
-        "paused" => Color::Yellow,
-        _ => Color::DarkGray,
-    };
+    let state_color = theme::state_color(t, state);
     rows.push(Row::new(vec![
         Cell::from(" State").style(key_style),
         Cell::from(Span::styled(
@@ -239,42 +234,38 @@ pub fn render_info(f: &mut Frame, area: Rect, app: &App) {
                     .map(|s| format!("{:?}", s))
                     .unwrap_or_else(|| "unknown".to_string());
                 let health_color = match health_status.as_str() {
-                    "HEALTHY" => Color::Green,
-                    "UNHEALTHY" => Color::Rgb(255, 80, 80),
-                    "STARTING" => Color::Yellow,
-                    _ => Color::White,
+                    "HEALTHY" => t.ok,
+                    "UNHEALTHY" => t.err,
+                    "STARTING" => t.warn,
+                    _ => t.fg,
                 };
                 rows.push(Row::new(vec![
-                    Cell::from(" Health").style(Style::default().fg(Color::Cyan)),
+                    Cell::from(" Health").style(key_style),
                     Cell::from(health_status).style(Style::default().fg(health_color).add_modifier(Modifier::BOLD)),
                 ]));
 
                 // Recent health check logs
                 if let Some(ref log) = health.log {
                     rows.push(Row::new(vec![
-                        Cell::from(" Checks").style(Style::default().fg(Color::Cyan)),
+                        Cell::from(" Checks").style(key_style),
                         Cell::from(format!("{} recent", log.len())),
                     ]));
                     for entry in log.iter().rev().take(5) {
                         let exit_code = entry.exit_code.unwrap_or(-1);
                         let icon = if exit_code == 0 { "✓" } else { "✗" };
-                        let color = if exit_code == 0 {
-                            Color::Green
-                        } else {
-                            Color::Rgb(255, 80, 80)
-                        };
+                        let color = if exit_code == 0 { t.ok } else { t.err };
                         let started = entry.start.as_deref().unwrap_or("");
-                        // Shorten timestamp
                         let time = if started.len() > 19 { &started[11..19] } else { started };
                         let output = entry.output.as_deref().unwrap_or("").trim();
-                        let output_short = if output.len() > 40 {
-                            format!("{}…", &output[..39])
+                        let output_short = if output.chars().count() > 40 {
+                            let head: String = output.chars().take(39).collect();
+                            format!("{}…", head)
                         } else {
                             output.to_string()
                         };
                         rows.push(Row::new(vec![
                             Cell::from(format!("  {} {}", icon, time)).style(Style::default().fg(color)),
-                            Cell::from(output_short).style(Style::default().fg(Color::DarkGray)),
+                            Cell::from(output_short).style(secondary_style),
                         ]));
                     }
                 }
@@ -300,7 +291,7 @@ pub fn render_info(f: &mut Frame, area: Rect, app: &App) {
     let rows: Vec<Row> = rows.into_iter().map(|r| r.height(1)).collect();
 
     let table = Table::new(rows, [Constraint::Length(14), Constraint::Min(20)])
-        .row_highlight_style(Style::default().bg(Color::Rgb(40, 40, 55)));
+        .row_highlight_style(Style::default().bg(t.bg_raised));
 
     f.render_widget(table, area);
 }

@@ -1,11 +1,15 @@
 use crate::app::{App, Focus, SidebarSection};
+use crate::ui::theme::{self, icons, Theme};
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::prelude::*;
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::widgets::Paragraph;
+use std::borrow::Cow;
+
+use super::format_size;
 
 fn truncate_name(name: &str, max: usize) -> String {
     if name.chars().count() > max {
-        format!("{}…", name.chars().take(max - 1).collect::<String>())
+        format!("{}…", name.chars().take(max.saturating_sub(1)).collect::<String>())
     } else {
         name.to_string()
     }
@@ -13,10 +17,10 @@ fn truncate_name(name: &str, max: usize) -> String {
 
 fn shorten_status(status: &str) -> String {
     let (prefix, body) = if let Some(rest) = status.strip_prefix("Up ") {
-        ("", rest)
+        ("up", rest)
     } else if status.starts_with("Exited (") {
         if let Some(code_end) = status.find(") ") {
-            let code = &status[7..code_end + 1]; // "(N)"
+            let code = &status[7..code_end + 1];
             let rest = &status[code_end + 2..];
             (code, rest)
         } else {
@@ -46,10 +50,23 @@ fn shorten_status(status: &str) -> String {
     }
 }
 
-use super::format_size;
+/// Build a header line like "CONTAINERS ────────────" that spans `width`.
+/// The rule string is served from a static pool, so only a dynamic label
+/// (project names) allocates.
+fn header_line(label: Cow<'static, str>, width: usize, focused: bool, t: &Theme) -> Line<'static> {
+    let label_len = label.chars().count();
+    let rule_len = width.saturating_sub(label_len + 3); // 1 lead + 1 gap + 1 trail
+    Line::from(vec![
+        Span::raw(" "),
+        Span::styled(label, theme::section_header(t, focused)),
+        Span::raw(" "),
+        Span::styled(theme::rule(rule_len), theme::section_rule(t)),
+        Span::raw(" "),
+    ])
+}
 
 /// Render a scrollable list of lines into an area, with "↑ N more" / "↓ N more" indicators.
-fn render_scrollable_lines(f: &mut Frame, area: Rect, lines: Vec<Line<'static>>, selected: Option<usize>) {
+fn render_scrollable_lines(f: &mut Frame, area: Rect, lines: Vec<Line<'static>>, selected: Option<usize>, t: &Theme) {
     let h = area.height as usize;
     let total = lines.len();
 
@@ -57,37 +74,30 @@ fn render_scrollable_lines(f: &mut Frame, area: Rect, lines: Vec<Line<'static>>,
         return;
     }
 
-    // If everything fits, just render
     if total <= h {
-        let text: Vec<Line> = lines;
-        f.render_widget(Paragraph::new(text), area);
+        f.render_widget(Paragraph::new(lines), area);
         return;
     }
 
-    // Need scrolling — reserve lines for indicators
     let sel = selected.unwrap_or(0);
-
-    // Calculate visible window
-    let avail = h.saturating_sub(1); // at least 1 line for indicator
+    let avail = h.saturating_sub(1);
     let (start, need_top, need_bottom) = if sel < avail {
-        // Selected is near top
         (0, false, true)
     } else if sel >= total.saturating_sub(h.saturating_sub(1)) {
-        // Selected is near bottom
-        let start = total.saturating_sub(h.saturating_sub(1)); // 1 for top indicator
+        let start = total.saturating_sub(h.saturating_sub(1));
         (start, true, false)
     } else {
-        // Middle — need both indicators
         let start = sel.saturating_sub((h.saturating_sub(2)) / 2);
         (start, true, true)
     };
 
     let mut rendered: Vec<Line> = vec![];
+    let dim = theme::dim_label(t);
 
     if need_top {
         rendered.push(Line::from(Span::styled(
-            format!("  ↑ {} more", start),
-            Style::default().fg(Color::DarkGray),
+            format!("  {} {} more", icons::ARROW_UP, start),
+            dim,
         )));
     }
 
@@ -101,8 +111,8 @@ fn render_scrollable_lines(f: &mut Frame, area: Rect, lines: Vec<Line<'static>>,
     let actual_end = start + slots;
     if need_bottom && actual_end < total {
         rendered.push(Line::from(Span::styled(
-            format!("  ↓ {} more", total - actual_end),
-            Style::default().fg(Color::DarkGray),
+            format!("  {} {} more", icons::ARROW_DOWN, total - actual_end),
+            dim,
         )));
     }
 
@@ -110,33 +120,6 @@ fn render_scrollable_lines(f: &mut Frame, area: Rect, lines: Vec<Line<'static>>,
 }
 
 pub fn render_sidebar(f: &mut Frame, area: Rect, app: &App) {
-    let border_color = if app.focus == Focus::Sidebar {
-        Color::Cyan
-    } else {
-        Color::DarkGray
-    };
-
-    let title_text = if let Some(ref host) = app.docker_host {
-        format!(
-            " rustydocker ({}) ",
-            host.trim_start_matches("tcp://").trim_start_matches("http://")
-        )
-    } else {
-        " rustydocker ".to_string()
-    };
-
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(border_color))
-        .title(Line::from(vec![Span::styled(
-            title_text,
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
-        )]));
-
-    let inner = block.inner(area);
-    f.render_widget(block, area);
-
-    // Split inner area into 4 equal sections
     let sections = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -145,7 +128,7 @@ pub fn render_sidebar(f: &mut Frame, area: Rect, app: &App) {
             Constraint::Ratio(1, 4),
             Constraint::Ratio(1, 4),
         ])
-        .split(inner);
+        .split(area);
 
     render_containers_section(f, sections[0], app);
     render_images_section(f, sections[1], app);
@@ -153,49 +136,45 @@ pub fn render_sidebar(f: &mut Frame, area: Rect, app: &App) {
     render_networks_section(f, sections[3], app);
 }
 
-fn header_style(active: bool) -> Style {
-    if active {
-        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(Color::DarkGray)
-    }
-}
-
-fn item_style(is_selected: bool) -> Style {
+fn item_line(spans: Vec<Span<'static>>, is_selected: bool, t: &Theme) -> Line<'static> {
     if is_selected {
-        Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(Color::White)
-    }
-}
-
-fn item_line(spans: Vec<Span<'static>>, is_selected: bool) -> Line<'static> {
-    if is_selected {
-        Line::from(spans).style(Style::default().bg(Color::Rgb(50, 50, 70)))
+        Line::from(spans).style(theme::selected_row(t))
     } else {
         Line::from(spans)
     }
 }
 
+/// Render a section header + body into an area. Returns the area beneath
+/// the header line where list items should be drawn.
+fn render_section_header(f: &mut Frame, area: Rect, label: Cow<'static, str>, focused: bool, app: &App) -> Rect {
+    let header = header_line(label, area.width as usize, focused, &app.theme);
+    let header_area = Rect::new(area.x, area.y, area.width, 1);
+    f.render_widget(Paragraph::new(header), header_area);
+    Rect::new(area.x, area.y + 1, area.width, area.height.saturating_sub(1))
+}
+
 fn render_containers_section(f: &mut Frame, area: Rect, app: &App) {
     let active = app.sidebar_section == SidebarSection::Services;
+    let focused = active && app.focus == Focus::Sidebar;
 
-    let title = if app.projects.is_empty() {
-        "Containers".to_string()
+    let label: Cow<'static, str> = if app.projects.is_empty() {
+        Cow::Borrowed("CONTAINERS")
     } else {
-        let names: Vec<&str> = app.projects.iter().map(|p| p.name.as_str()).collect();
-        names.join(", ")
+        Cow::Owned(
+            app.projects
+                .iter()
+                .map(|p| p.name.to_ascii_uppercase())
+                .collect::<Vec<_>>()
+                .join(", "),
+        )
     };
 
-    let block = Block::default()
-        .title(Span::styled(format!(" {} ", title), header_style(active)))
-        .borders(Borders::BOTTOM)
-        .border_style(Style::default().fg(Color::DarkGray));
+    let content_area = render_section_header(f, area, label, focused, app);
 
-    let content_area = block.inner(area);
-    f.render_widget(block, area);
-
+    let t = &app.theme;
+    let dim = theme::dim_label(t);
     let filtered = app.filtered_containers();
+    let max_name = (content_area.width as usize).saturating_sub(16).max(8);
     let lines: Vec<Line> = filtered
         .iter()
         .map(|(orig_idx, c)| {
@@ -206,44 +185,42 @@ fn render_containers_section(f: &mut Frame, area: Rect, app: &App) {
                 .map(|n| n.trim_start_matches('/').to_string())
                 .unwrap_or_else(|| "unknown".to_string());
             let state = c.state.as_deref().unwrap_or("unknown");
-            let (indicator, color) = match state {
-                "running" => ("●", Color::Green),
-                "exited" => ("●", Color::Rgb(255, 80, 80)),
-                "restarting" => ("◉", Color::Yellow),
-                "paused" => ("●", Color::Blue),
-                _ => ("○", Color::DarkGray),
-            };
+            let (glyph, glyph_style) = theme::state_style(t, state);
+
             let status_raw = c.status.as_deref().unwrap_or(state);
             let status_text = shorten_status(status_raw);
-            let display_name = truncate_name(&name, 18);
+
             let id = c.id.as_deref().unwrap_or("");
             let is_multi_selected = app.selected_containers.contains(id);
             let is_pinned = app.pinned_containers.contains(id);
-            let pin_marker = if is_pinned { "★" } else { "" };
-            let prefix = if is_multi_selected {
-                format!("◆{}{} ", pin_marker, indicator)
-            } else if is_pinned {
-                format!(" {}{} ", pin_marker, indicator)
-            } else {
-                format!(" {} ", indicator)
-            };
             let is_selected = active && app.selected_index == *orig_idx;
             let has_alert = app.container_has_alert(id);
-            let name_style = if has_alert {
-                Style::default()
-                    .fg(Color::Rgb(255, 80, 80))
-                    .add_modifier(Modifier::BOLD)
+
+            let display_name = truncate_name(&name, max_name);
+
+            let select_prefix = if is_multi_selected {
+                Span::styled(icons::SELECTED, Style::default().fg(t.accent_primary))
             } else {
-                item_style(is_selected)
+                Span::raw(" ")
             };
-            item_line(
-                vec![
-                    Span::styled(prefix, Style::default().fg(color)),
-                    Span::styled(display_name, name_style),
-                    Span::styled(format!(" {}", status_text), Style::default().fg(Color::DarkGray)),
-                ],
-                is_selected,
-            )
+
+            let mut spans = vec![
+                Span::raw(" "),
+                select_prefix,
+                Span::raw(" "),
+                Span::styled(glyph, glyph_style),
+                Span::raw(" "),
+                Span::styled(display_name, theme::name_style(t, is_selected, has_alert)),
+                Span::raw(" "),
+                Span::styled(status_text, dim),
+            ];
+
+            if is_pinned {
+                spans.push(Span::raw(" "));
+                spans.push(Span::styled(icons::PIN, Style::default().fg(t.accent_primary)));
+            }
+
+            item_line(spans, is_selected, t)
         })
         .collect();
 
@@ -254,23 +231,16 @@ fn render_containers_section(f: &mut Frame, area: Rect, app: &App) {
     } else {
         None
     };
-    render_scrollable_lines(f, content_area, lines, selected);
+    render_scrollable_lines(f, content_area, lines, selected, t);
 }
 
 fn render_images_section(f: &mut Frame, area: Rect, app: &App) {
     let active = app.sidebar_section == SidebarSection::Images;
+    let focused = active && app.focus == Focus::Sidebar;
+    let content_area = render_section_header(f, area, Cow::Borrowed("IMAGES"), focused, app);
 
-    let block = Block::default()
-        .title(Span::styled(
-            format!(" Images ({}) ", app.images.len()),
-            header_style(active),
-        ))
-        .borders(Borders::BOTTOM)
-        .border_style(Style::default().fg(Color::DarkGray));
-
-    let content_area = block.inner(area);
-    f.render_widget(block, area);
-
+    let t = &app.theme;
+    let dim = theme::dim_label(t);
     let filtered = app.filtered_images();
     let lines: Vec<Line> = filtered
         .iter()
@@ -280,11 +250,13 @@ fn render_images_section(f: &mut Frame, area: Rect, app: &App) {
             let is_selected = active && app.selected_index == *orig_idx;
             item_line(
                 vec![
-                    Span::styled(" ", Style::default()),
-                    Span::styled(tag.to_string(), item_style(is_selected)),
-                    Span::styled(format!(" {}", size), Style::default().fg(Color::DarkGray)),
+                    Span::raw("  "),
+                    Span::styled(tag.to_string(), theme::name_style(t, is_selected, false)),
+                    Span::raw("  "),
+                    Span::styled(size, dim),
                 ],
                 is_selected,
+                t,
             )
         })
         .collect();
@@ -296,24 +268,16 @@ fn render_images_section(f: &mut Frame, area: Rect, app: &App) {
     } else {
         None
     };
-    render_scrollable_lines(f, content_area, lines, selected);
+    render_scrollable_lines(f, content_area, lines, selected, t);
 }
 
 fn render_volumes_section(f: &mut Frame, area: Rect, app: &App) {
     let active = app.sidebar_section == SidebarSection::Volumes;
+    let focused = active && app.focus == Focus::Sidebar;
+    let content_area = render_section_header(f, area, Cow::Borrowed("VOLUMES"), focused, app);
 
-    let block = Block::default()
-        .title(Span::styled(
-            format!(" Volumes ({}) ", app.volumes.len()),
-            header_style(active),
-        ))
-        .borders(Borders::BOTTOM)
-        .border_style(Style::default().fg(Color::DarkGray));
-
-    let content_area = block.inner(area);
-    f.render_widget(block, area);
-
-    let max_name = content_area.width.saturating_sub(2) as usize;
+    let t = &app.theme;
+    let max_name = (content_area.width as usize).saturating_sub(4).max(6);
     let filtered = app.filtered_volumes();
     let lines: Vec<Line> = filtered
         .iter()
@@ -322,10 +286,11 @@ fn render_volumes_section(f: &mut Frame, area: Rect, app: &App) {
             let is_selected = active && app.selected_index == *orig_idx;
             item_line(
                 vec![
-                    Span::styled(" ", Style::default()),
-                    Span::styled(display_name, item_style(is_selected)),
+                    Span::raw("  "),
+                    Span::styled(display_name, theme::name_style(t, is_selected, false)),
                 ],
                 is_selected,
+                t,
             )
         })
         .collect();
@@ -337,20 +302,16 @@ fn render_volumes_section(f: &mut Frame, area: Rect, app: &App) {
     } else {
         None
     };
-    render_scrollable_lines(f, content_area, lines, selected);
+    render_scrollable_lines(f, content_area, lines, selected, t);
 }
 
 fn render_networks_section(f: &mut Frame, area: Rect, app: &App) {
     let active = app.sidebar_section == SidebarSection::Networks;
+    let focused = active && app.focus == Focus::Sidebar;
+    let content_area = render_section_header(f, area, Cow::Borrowed("NETWORKS"), focused, app);
 
-    let block = Block::default().title(Span::styled(
-        format!(" Networks ({}) ", app.networks.len()),
-        header_style(active),
-    ));
-
-    let content_area = block.inner(area);
-    f.render_widget(block, area);
-
+    let t = &app.theme;
+    let dim = theme::dim_label(t);
     let filtered = app.filtered_networks();
     let lines: Vec<Line> = filtered
         .iter()
@@ -361,11 +322,13 @@ fn render_networks_section(f: &mut Frame, area: Rect, app: &App) {
             let is_selected = active && app.selected_index == *orig_idx;
             item_line(
                 vec![
-                    Span::styled(" ", Style::default()),
-                    Span::styled(display_name, item_style(is_selected)),
-                    Span::styled(format!(" {}", driver), Style::default().fg(Color::DarkGray)),
+                    Span::raw("  "),
+                    Span::styled(display_name, theme::name_style(t, is_selected, false)),
+                    Span::raw("  "),
+                    Span::styled(driver.to_string(), dim),
                 ],
                 is_selected,
+                t,
             )
         })
         .collect();
@@ -377,5 +340,5 @@ fn render_networks_section(f: &mut Frame, area: Rect, app: &App) {
     } else {
         None
     };
-    render_scrollable_lines(f, content_area, lines, selected);
+    render_scrollable_lines(f, content_area, lines, selected, t);
 }

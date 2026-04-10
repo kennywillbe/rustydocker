@@ -175,6 +175,7 @@ pub struct App {
     pub compare_container_id: Option<String>,
     pub hooks: Vec<crate::config::Hook>,
     pub docker_host: Option<String>,
+    pub theme: crate::ui::theme::Theme,
 }
 
 impl App {
@@ -221,6 +222,7 @@ impl App {
             compare_container_id: None,
             hooks: config.hooks.clone(),
             docker_host: None,
+            theme: crate::ui::theme::Theme::from_name(&config.theme),
         }
     }
 

@@ -4,6 +4,7 @@ use ratatui::widgets::{Paragraph, Wrap};
 use std::collections::HashSet;
 
 pub fn render_log_diff(f: &mut Frame, area: Rect, app: &App) {
+    let t = &app.theme;
     let container_id = match app.selected_container_id() {
         Some(id) => id,
         None => return,
@@ -15,7 +16,7 @@ pub fn render_log_diff(f: &mut Frame, area: Rect, app: &App) {
     if current.is_empty() && snapshot.is_empty() {
         f.render_widget(
             Paragraph::new("No logs to compare")
-                .style(Style::default().fg(Color::DarkGray))
+                .style(crate::ui::theme::dim_label(t))
                 .alignment(Alignment::Center),
             area,
         );
@@ -30,13 +31,13 @@ pub fn render_log_diff(f: &mut Frame, area: Rect, app: &App) {
         .iter()
         .map(|line| {
             if snapshot_set.contains(line.as_str()) {
-                // Existed in snapshot -- show dim
-                Line::from(Span::styled(line.clone(), Style::default().fg(Color::DarkGray)))
+                // Existed in snapshot — show dim
+                Line::from(Span::styled(line.clone(), Style::default().fg(t.fg_muted)))
             } else {
-                // New since snapshot -- show green with + prefix
+                // New since snapshot — show ok colour with + prefix
                 Line::from(vec![
-                    Span::styled("+ ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
-                    Span::styled(line.clone(), Style::default().fg(Color::Green)),
+                    Span::styled("+ ", Style::default().fg(t.ok).add_modifier(Modifier::BOLD)),
+                    Span::styled(line.clone(), Style::default().fg(t.ok)),
                 ])
             }
         })

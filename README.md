@@ -6,6 +6,12 @@ A fast, compose-first Docker TUI written in Rust. A modern alternative to lazydo
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.75+-orange)](https://www.rust-lang.org/)
 
+![rustydocker — the ember theme](docs/screenshot.png)
+
+The default `ember` theme ships with a warm amber-on-black palette. Set
+`theme = "classic"` in `~/.config/rustydocker/config.toml` to switch back
+to the original cyan/green look.
+
 ## Features
 
 - **Compose-first** — services grouped by Docker Compose project

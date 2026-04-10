@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0](https://github.com/kennywillbe/rustydocker/compare/v0.2.0...v0.3.0) (2026-04-10)
+
+
+### Features
+
+* ember theme with compact stats and HTTP status highlighting ([#20](https://github.com/kennywillbe/rustydocker/issues/20)) ([cfb044e](https://github.com/kennywillbe/rustydocker/commit/cfb044e3714fcbe681397ecda9625895ff388179))
+
+
+### Bug Fixes
+
+* use PAT for release-please CI trigger ([#15](https://github.com/kennywillbe/rustydocker/issues/15)) ([77aea83](https://github.com/kennywillbe/rustydocker/commit/77aea8393f22a6e1fa544b188c53bf1dd0edeec6))
+
 ## [0.2.1](https://github.com/kennywillbe/rustydocker/compare/v0.2.0...v0.2.1) (2026-04-09)
 
 

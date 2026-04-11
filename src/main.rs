@@ -3,6 +3,7 @@ mod config;
 mod docker;
 mod event;
 mod ui;
+mod update;
 
 use anyhow::Result;
 use app::AppAction;

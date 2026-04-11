@@ -97,6 +97,26 @@ pub enum UpdateProgress {
     Failed(String),
 }
 
+/// Construct the asset target string that matches rustydocker's release
+/// assets: `rustydocker_<version>_<OS>_<ARCH>.tar.gz`. This replicates
+/// install.sh's `$(uname -s)_<arch>` convention rather than using Rust's
+/// target triple (which would have self_update looking for
+/// `x86_64-unknown-linux-gnu` and never finding it).
+fn release_asset_target() -> String {
+    let os = match std::env::consts::OS {
+        "linux" => "Linux",
+        "macos" => "Darwin",
+        other => other,
+    };
+    let arch = match std::env::consts::ARCH {
+        "x86_64" => "x86_64",
+        "aarch64" => "arm64",
+        "arm" => "armv7",
+        other => other,
+    };
+    format!("{}_{}", os, arch)
+}
+
 /// Run the self-update synchronously. Call this via
 /// `tokio::task::spawn_blocking` from the main loop. All outcomes are
 /// reported via `progress_tx`, including the error case — this function
@@ -104,13 +124,19 @@ pub enum UpdateProgress {
 pub fn run_self_update(target_version: &str, progress_tx: UnboundedSender<UpdateProgress>) {
     let _ = progress_tx.send(UpdateProgress::Downloading(0));
 
+    let target = release_asset_target();
     let updater = match self_update::backends::github::Update::configure()
         .repo_owner(GITHUB_REPO_OWNER)
         .repo_name(GITHUB_REPO_NAME)
         .bin_name("rustydocker")
-        .target(self_update::get_target())
+        .target(&target)
         .show_download_progress(false)
         .show_output(false)
+        // Skip the interactive "Do you want to continue? [Y/n]" prompt.
+        // The user already confirmed via our own Confirming modal; if we
+        // don't disable this, self_update prints to stdout *under* the TUI
+        // and waits on stdin that the TUI has taken over.
+        .no_confirm(true)
         .current_version(env!("CARGO_PKG_VERSION"))
         .target_version_tag(&format!("v{}", target_version))
         .build()

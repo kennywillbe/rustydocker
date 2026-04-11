@@ -406,6 +406,52 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, cli: Cli
                                     }
                                 }
                             }
+                            AppAction::RequestUpdateCheck => {
+                                match (&app.update_available, &app.update_flow) {
+                                    (Some(info), app::UpdateFlow::Idle) if info.self_updatable => {
+                                        app.update_flow = app::UpdateFlow::Confirming;
+                                    }
+                                    (Some(_), app::UpdateFlow::Idle) => {
+                                        app.set_status("Update available — install via your package manager");
+                                    }
+                                    (None, app::UpdateFlow::Idle) => {
+                                        app.set_status(&format!(
+                                            "You're on the latest version ({})",
+                                            env!("CARGO_PKG_VERSION")
+                                        ));
+                                    }
+                                    (_, app::UpdateFlow::InstalledPendingRestart) => {
+                                        app.set_status("Update already installed — restart rustydocker to apply");
+                                    }
+                                    _ => {} // already in a transient flow state — ignore
+                                }
+                            }
+                            AppAction::ConfirmUpdate => {
+                                if let Some(info) = app.update_available.clone() {
+                                    app.update_flow = app::UpdateFlow::Downloading(0);
+                                    let ptx = progress_tx.clone();
+                                    let version = info.version.clone();
+                                    tokio::task::spawn_blocking(move || {
+                                        update::run_self_update(&version, ptx);
+                                    });
+                                }
+                            }
+                            AppAction::CancelUpdate => {
+                                app.update_flow = app::UpdateFlow::Idle;
+                            }
+                            AppAction::DismissAfterUpdate => {
+                                app.update_flow = app::UpdateFlow::InstalledPendingRestart;
+                            }
+                            AppAction::RestartAfterUpdate => {
+                                use std::os::unix::process::CommandExt;
+                                restore_terminal();
+                                let exe = std::env::current_exe()?;
+                                let err = std::process::Command::new(exe)
+                                    .args(std::env::args().skip(1))
+                                    .exec();
+                                // exec() only returns on failure.
+                                return Err(err.into());
+                            }
                             _ => {}
                         }
 

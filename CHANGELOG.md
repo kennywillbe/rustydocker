@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/kennywillbe/rustydocker/compare/v0.3.0...v0.3.1) (2026-04-11)
+
+
+### Bug Fixes
+
+* --version flag and in-app update check ([#22](https://github.com/kennywillbe/rustydocker/issues/22)) ([1695166](https://github.com/kennywillbe/rustydocker/commit/1695166986ae5c1b1b6bf5ea1f196488bf10e97f))
+
 ## [0.3.0](https://github.com/kennywillbe/rustydocker/compare/v0.2.0...v0.3.0) (2026-04-10)
 
 

@@ -478,11 +478,46 @@ impl App {
         match key.code {
             KeyCode::Char('q') => return AppAction::Quit,
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return AppAction::Quit,
+            KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                return AppAction::RequestUpdateCheck;
+            }
             KeyCode::Char('?') => {
                 self.show_help = !self.show_help;
                 return AppAction::None;
             }
             _ => {}
+        }
+
+        // Update flow modals own keyboard input while they're active.
+        // Must come before pending_confirm so nested modals route correctly.
+        match self.update_flow {
+            UpdateFlow::Confirming => {
+                match key.code {
+                    KeyCode::Char('y') | KeyCode::Enter => return AppAction::ConfirmUpdate,
+                    KeyCode::Char('n') | KeyCode::Esc => return AppAction::CancelUpdate,
+                    _ => return AppAction::None,
+                }
+            }
+            UpdateFlow::Downloading(_) | UpdateFlow::Installing => {
+                // Atomic operation — all keys swallowed, no cancel.
+                return AppAction::None;
+            }
+            UpdateFlow::Complete => {
+                match key.code {
+                    KeyCode::Char('r') | KeyCode::Enter => return AppAction::RestartAfterUpdate,
+                    KeyCode::Char('l') | KeyCode::Esc => return AppAction::DismissAfterUpdate,
+                    _ => return AppAction::None,
+                }
+            }
+            UpdateFlow::Failed(_) => {
+                match key.code {
+                    KeyCode::Esc | KeyCode::Enter => return AppAction::CancelUpdate,
+                    _ => return AppAction::None,
+                }
+            }
+            UpdateFlow::Idle | UpdateFlow::InstalledPendingRestart => {
+                // Non-modal — fall through to normal key handling.
+            }
         }
 
         if self.show_help {

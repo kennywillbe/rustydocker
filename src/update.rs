@@ -9,9 +9,89 @@ use semver::Version;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::sync::mpsc::UnboundedSender;
 
 /// 6-hour cache TTL for the GitHub latest-release check.
 pub const CACHE_TTL_SECS: u64 = 6 * 60 * 60;
+
+pub const GITHUB_REPO_OWNER: &str = "kennywillbe";
+pub const GITHUB_REPO_NAME: &str = "rustydocker";
+
+/// Result of a background update check, delivered to the main loop.
+#[derive(Debug, Clone)]
+pub enum UpdateCheckOutcome {
+    /// Newer version available. `self_updatable` tells the UI whether
+    /// to offer the in-app update flow or fall back to
+    /// "update via package manager".
+    Available {
+        version: String,
+        self_updatable: bool,
+    },
+    /// We're on the latest stable, or the check was skipped / failed
+    /// silently. Either way, no banner.
+    UpToDate,
+}
+
+/// Spawn the background update check. Returns immediately. If checking
+/// is disabled (config or env var), does nothing at all — no task, no
+/// network, no delay. Any failure inside the task is silently swallowed
+/// (results in `UpToDate`).
+pub fn spawn_check(
+    current_version: &'static str,
+    check_enabled: bool,
+    tx: UnboundedSender<UpdateCheckOutcome>,
+) {
+    if !check_enabled {
+        return;
+    }
+
+    tokio::task::spawn_blocking(move || {
+        let outcome = check_blocking(current_version);
+        // Channel close = app shutting down; ignore.
+        let _ = tx.send(outcome);
+    });
+}
+
+fn check_blocking(current_version: &'static str) -> UpdateCheckOutcome {
+    // 1. Try the cache first.
+    let latest = match read_cache() {
+        Some(cache) if is_cache_fresh(&cache) => cache.latest_version,
+        _ => match fetch_latest_from_github() {
+            Some(v) => {
+                write_cache(&CachedCheck {
+                    checked_at: now_secs(),
+                    latest_version: v.clone(),
+                });
+                v
+            }
+            None => return UpdateCheckOutcome::UpToDate,
+        },
+    };
+
+    // 2. Compare. Pre-release tags are silently ignored.
+    if is_newer_stable(current_version, &latest) {
+        UpdateCheckOutcome::Available {
+            version: latest,
+            self_updatable: is_self_updatable(),
+        }
+    } else {
+        UpdateCheckOutcome::UpToDate
+    }
+}
+
+fn fetch_latest_from_github() -> Option<String> {
+    let releases = self_update::backends::github::ReleaseList::configure()
+        .repo_owner(GITHUB_REPO_OWNER)
+        .repo_name(GITHUB_REPO_NAME)
+        .build()
+        .ok()?
+        .fetch()
+        .ok()?;
+    let latest = releases.into_iter().next()?;
+    // `Release::version` is already stripped of the leading `v` by
+    // self_update, but trim defensively just in case.
+    Some(latest.version.trim_start_matches('v').to_string())
+}
 
 /// True iff `latest` parses as a strictly-newer semver than `current`
 /// AND `latest` is not a pre-release. Garbage input returns false.

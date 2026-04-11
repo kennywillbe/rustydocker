@@ -491,30 +491,24 @@ impl App {
         // Update flow modals own keyboard input while they're active.
         // Must come before pending_confirm so nested modals route correctly.
         match self.update_flow {
-            UpdateFlow::Confirming => {
-                match key.code {
-                    KeyCode::Char('y') | KeyCode::Enter => return AppAction::ConfirmUpdate,
-                    KeyCode::Char('n') | KeyCode::Esc => return AppAction::CancelUpdate,
-                    _ => return AppAction::None,
-                }
-            }
+            UpdateFlow::Confirming => match key.code {
+                KeyCode::Char('y') | KeyCode::Enter => return AppAction::ConfirmUpdate,
+                KeyCode::Char('n') | KeyCode::Esc => return AppAction::CancelUpdate,
+                _ => return AppAction::None,
+            },
             UpdateFlow::Downloading(_) | UpdateFlow::Installing => {
                 // Atomic operation — all keys swallowed, no cancel.
                 return AppAction::None;
             }
-            UpdateFlow::Complete => {
-                match key.code {
-                    KeyCode::Char('r') | KeyCode::Enter => return AppAction::RestartAfterUpdate,
-                    KeyCode::Char('l') | KeyCode::Esc => return AppAction::DismissAfterUpdate,
-                    _ => return AppAction::None,
-                }
-            }
-            UpdateFlow::Failed(_) => {
-                match key.code {
-                    KeyCode::Esc | KeyCode::Enter => return AppAction::CancelUpdate,
-                    _ => return AppAction::None,
-                }
-            }
+            UpdateFlow::Complete => match key.code {
+                KeyCode::Char('r') | KeyCode::Enter => return AppAction::RestartAfterUpdate,
+                KeyCode::Char('l') | KeyCode::Esc => return AppAction::DismissAfterUpdate,
+                _ => return AppAction::None,
+            },
+            UpdateFlow::Failed(_) => match key.code {
+                KeyCode::Esc | KeyCode::Enter => return AppAction::CancelUpdate,
+                _ => return AppAction::None,
+            },
             UpdateFlow::Idle | UpdateFlow::InstalledPendingRestart => {
                 // Non-modal — fall through to normal key handling.
             }

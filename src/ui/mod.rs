@@ -86,11 +86,8 @@ pub fn draw(f: &mut Frame, app: &App) {
 
     // Status bar split: left = normal hints, right = update indicator.
     let right_width = update_indicator_width(app);
-    let status_areas = Layout::horizontal([
-        Constraint::Min(0),
-        Constraint::Length(right_width),
-    ])
-    .split(app_layout.status_bar);
+    let status_areas =
+        Layout::horizontal([Constraint::Min(0), Constraint::Length(right_width)]).split(app_layout.status_bar);
     let left_area = status_areas[0];
     let right_area = status_areas[1];
 
@@ -129,9 +126,7 @@ fn update_indicator_width(app: &App) -> u16 {
             // e.g. "↑ 0.3.1 available · ^U " — keep a couple of spare cells.
             (info.version.chars().count() as u16) + 20
         }
-        (UpdateFlow::Idle, Some(info)) => {
-            (info.version.chars().count() as u16) + 22
-        }
+        (UpdateFlow::Idle, Some(info)) => (info.version.chars().count() as u16) + 22,
         (UpdateFlow::Downloading(_), _) => {
             let version_len = app
                 .update_available
@@ -150,9 +145,7 @@ fn update_indicator_width(app: &App) -> u16 {
             (version_len as u16) + 24
         }
         // Modal owns the screen in these states — hide the right segment.
-        (UpdateFlow::Confirming, _)
-        | (UpdateFlow::Complete, _)
-        | (UpdateFlow::Failed(_), _) => 0,
+        (UpdateFlow::Confirming, _) | (UpdateFlow::Complete, _) | (UpdateFlow::Failed(_), _) => 0,
     }
 }
 
@@ -163,39 +156,28 @@ fn build_update_indicator(app: &App) -> Line<'static> {
     let dim = Style::default().fg(t.fg_muted);
 
     match (&app.update_flow, &app.update_available) {
-        (UpdateFlow::Idle, Some(info)) if info.self_updatable => Line::from(Span::styled(
-            format!("↑ {} available · ^U ", info.version),
-            accent,
-        )),
-        (UpdateFlow::Idle, Some(info)) => Line::from(Span::styled(
-            format!("↑ {} · package manager ", info.version),
-            dim,
-        )),
+        (UpdateFlow::Idle, Some(info)) if info.self_updatable => {
+            Line::from(Span::styled(format!("↑ {} available · ^U ", info.version), accent))
+        }
+        (UpdateFlow::Idle, Some(info)) => {
+            Line::from(Span::styled(format!("↑ {} · package manager ", info.version), dim))
+        }
         (UpdateFlow::Downloading(p), _) => {
             let version = app
                 .update_available
                 .as_ref()
                 .map(|i| i.version.clone())
                 .unwrap_or_else(|| "update".to_string());
-            Line::from(Span::styled(
-                format!("↓ downloading {} {}% ", version, p),
-                accent,
-            ))
+            Line::from(Span::styled(format!("↓ downloading {} {}% ", version, p), accent))
         }
-        (UpdateFlow::Installing, _) => Line::from(Span::styled(
-            "↓ installing… ".to_string(),
-            accent,
-        )),
+        (UpdateFlow::Installing, _) => Line::from(Span::styled("↓ installing… ".to_string(), accent)),
         (UpdateFlow::InstalledPendingRestart, _) => {
             let version = app
                 .update_available
                 .as_ref()
                 .map(|i| i.version.clone())
                 .unwrap_or_default();
-            Line::from(Span::styled(
-                format!("✓ {} installed · restart ", version),
-                accent,
-            ))
+            Line::from(Span::styled(format!("✓ {} installed · restart ", version), accent))
         }
         _ => Line::from(""),
     }

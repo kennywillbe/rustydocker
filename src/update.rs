@@ -23,10 +23,7 @@ pub enum UpdateCheckOutcome {
     /// Newer version available. `self_updatable` tells the UI whether
     /// to offer the in-app update flow or fall back to
     /// "update via package manager".
-    Available {
-        version: String,
-        self_updatable: bool,
-    },
+    Available { version: String, self_updatable: bool },
     /// We're on the latest stable, or the check was skipped / failed
     /// silently. Either way, no banner.
     UpToDate,
@@ -36,11 +33,7 @@ pub enum UpdateCheckOutcome {
 /// is disabled (config or env var), does nothing at all — no task, no
 /// network, no delay. Any failure inside the task is silently swallowed
 /// (results in `UpToDate`).
-pub fn spawn_check(
-    current_version: &'static str,
-    check_enabled: bool,
-    tx: UnboundedSender<UpdateCheckOutcome>,
-) {
+pub fn spawn_check(current_version: &'static str, check_enabled: bool, tx: UnboundedSender<UpdateCheckOutcome>) {
     if !check_enabled {
         return;
     }

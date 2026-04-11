@@ -30,11 +30,7 @@ enum ProgressLabel {
 fn render_confirming(f: &mut Frame, area: Rect, app: &App) {
     let t = &app.theme;
     let current = env!("CARGO_PKG_VERSION");
-    let target = app
-        .update_available
-        .as_ref()
-        .map(|i| i.version.as_str())
-        .unwrap_or("?");
+    let target = app.update_available.as_ref().map(|i| i.version.as_str()).unwrap_or("?");
 
     let lines = vec![
         Line::from(""),
@@ -66,11 +62,7 @@ fn render_confirming(f: &mut Frame, area: Rect, app: &App) {
 
 fn render_progress(f: &mut Frame, area: Rect, app: &App, label: ProgressLabel) {
     let t = &app.theme;
-    let target = app
-        .update_available
-        .as_ref()
-        .map(|i| i.version.as_str())
-        .unwrap_or("?");
+    let target = app.update_available.as_ref().map(|i| i.version.as_str()).unwrap_or("?");
 
     let (heading, percent) = match label {
         ProgressLabel::Downloading(p) => (format!("Downloading {}", target), p),
@@ -102,11 +94,7 @@ fn render_progress(f: &mut Frame, area: Rect, app: &App, label: ProgressLabel) {
 
 fn render_complete(f: &mut Frame, area: Rect, app: &App) {
     let t = &app.theme;
-    let target = app
-        .update_available
-        .as_ref()
-        .map(|i| i.version.as_str())
-        .unwrap_or("?");
+    let target = app.update_available.as_ref().map(|i| i.version.as_str()).unwrap_or("?");
 
     let lines = vec![
         Line::from(""),
@@ -146,13 +134,13 @@ fn render_failed(f: &mut Frame, area: Rect, app: &App, msg: &str) {
             Style::default().fg(t.err).add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
-        Line::from(Span::styled(
-            format!("  {}", msg),
-            Style::default().fg(t.fg),
-        )),
+        Line::from(Span::styled(format!("  {}", msg), Style::default().fg(t.fg))),
         Line::from(""),
         Line::from(vec![
-            Span::styled("  Esc/Enter", Style::default().fg(t.fg_muted).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "  Esc/Enter",
+                Style::default().fg(t.fg_muted).add_modifier(Modifier::BOLD),
+            ),
             Span::styled(" dismiss", Style::default().fg(t.fg)),
         ]),
         Line::from(""),
@@ -169,14 +157,7 @@ fn render_failed(f: &mut Frame, area: Rect, app: &App, msg: &str) {
     );
 }
 
-fn draw_popup(
-    f: &mut Frame,
-    area: Rect,
-    t: &Theme,
-    title: &'static str,
-    kind: PopupKind,
-    lines: Vec<Line<'static>>,
-) {
+fn draw_popup(f: &mut Frame, area: Rect, t: &Theme, title: &'static str, kind: PopupKind, lines: Vec<Line<'static>>) {
     let popup_area = super::centered_rect(area, POPUP_WIDTH, lines.len() as u16 + 2);
     f.render_widget(Clear, popup_area);
     f.render_widget(

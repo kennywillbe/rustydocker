@@ -83,13 +83,10 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, cli: Cli
     // Update check channels. update_tx is consumed by the background
     // check spawned below; progress_tx is cloned into the spawn_blocking
     // task when the user actually triggers a self-update.
-    let (update_tx, mut update_rx) =
-        tokio::sync::mpsc::unbounded_channel::<update::UpdateCheckOutcome>();
-    let (progress_tx, mut progress_rx) =
-        tokio::sync::mpsc::unbounded_channel::<update::UpdateProgress>();
+    let (update_tx, mut update_rx) = tokio::sync::mpsc::unbounded_channel::<update::UpdateCheckOutcome>();
+    let (progress_tx, mut progress_rx) = tokio::sync::mpsc::unbounded_channel::<update::UpdateProgress>();
 
-    let check_enabled = app.check_updates
-        && std::env::var("RUSTYDOCKER_NO_UPDATE_CHECK").is_err();
+    let check_enabled = app.check_updates && std::env::var("RUSTYDOCKER_NO_UPDATE_CHECK").is_err();
     update::spawn_check(env!("CARGO_PKG_VERSION"), check_enabled, update_tx);
 
     // Load compose projects from CLI flag or current directory

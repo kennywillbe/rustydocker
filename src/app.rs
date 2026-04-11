@@ -176,6 +176,34 @@ pub struct App {
     pub hooks: Vec<crate::config::Hook>,
     pub docker_host: Option<String>,
     pub theme: crate::ui::theme::Theme,
+    pub check_updates: bool,
+    pub update_available: Option<UpdateInfo>,
+    pub update_flow: UpdateFlow,
+}
+
+/// Information about an available update, populated by the background
+/// check. `self_updatable` is false for AUR / Homebrew / system installs.
+#[derive(Debug, Clone)]
+pub struct UpdateInfo {
+    pub version: String,
+    pub self_updatable: bool,
+}
+
+/// Transient state of the update flow. `Idle` is the common case;
+/// `Confirming..Failed` are modal states that own keyboard input.
+/// `InstalledPendingRestart` is sticky: a non-modal banner nudging
+/// the user to restart after they dismissed the complete modal with
+/// `[l] later`.
+#[derive(Debug, Clone, Default)]
+pub enum UpdateFlow {
+    #[default]
+    Idle,
+    Confirming,
+    Downloading(u8),
+    Installing,
+    Complete,
+    InstalledPendingRestart,
+    Failed(String),
 }
 
 impl App {
@@ -223,6 +251,9 @@ impl App {
             hooks: config.hooks.clone(),
             docker_host: None,
             theme: crate::ui::theme::Theme::from_name(&config.theme),
+            check_updates: config.check_updates,
+            update_available: None,
+            update_flow: UpdateFlow::default(),
         }
     }
 
@@ -1004,6 +1035,12 @@ pub enum AppAction {
     PruneNetworks,
     ExportLogs,
     RunCustomCommand(usize),
+    // Update flow
+    RequestUpdateCheck,
+    ConfirmUpdate,
+    CancelUpdate,
+    RestartAfterUpdate,
+    DismissAfterUpdate,
 }
 
 #[cfg(test)]

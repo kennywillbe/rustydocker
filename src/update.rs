@@ -73,3 +73,37 @@ pub fn write_cache(cache: &CachedCheck) {
         let _ = std::fs::write(&path, json);
     }
 }
+
+/// Whether the current binary can be replaced in place by the current
+/// user. Returns false for distro-packaged / system installs so AUR
+/// and Homebrew users are never pushed into a broken self-update path.
+pub fn is_self_updatable() -> bool {
+    let Ok(exe) = std::env::current_exe() else {
+        return false;
+    };
+
+    // Blocklist common system prefixes — these are owned by the package
+    // manager and even if they're technically writable, we shouldn't touch
+    // them.
+    let exe_str = exe.to_string_lossy();
+    const SYSTEM_PREFIXES: &[&str] = &["/usr/", "/opt/", "/bin/", "/sbin/"];
+    for prefix in SYSTEM_PREFIXES {
+        if exe_str.starts_with(prefix) {
+            return false;
+        }
+    }
+
+    // Probe-write to the binary's parent directory to verify we can
+    // actually replace the file. We don't touch the binary itself.
+    let Some(parent) = exe.parent() else {
+        return false;
+    };
+    let probe = parent.join(".rustydocker-update-probe");
+    match std::fs::File::create(&probe) {
+        Ok(_) => {
+            let _ = std::fs::remove_file(&probe);
+            true
+        }
+        Err(_) => false,
+    }
+}

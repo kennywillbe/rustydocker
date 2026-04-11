@@ -123,8 +123,8 @@ fn update_indicator_width(app: &App) -> u16 {
     match (&app.update_flow, &app.update_available) {
         (UpdateFlow::Idle, None) => 0,
         (UpdateFlow::Idle, Some(info)) if info.self_updatable => {
-            // e.g. "↑ 0.3.1 available · ^U " — keep a couple of spare cells.
-            (info.version.chars().count() as u16) + 20
+            // e.g. "↑ 0.3.1 available · Ctrl+U " — keep a couple of spare cells.
+            (info.version.chars().count() as u16) + 24
         }
         (UpdateFlow::Idle, Some(info)) => (info.version.chars().count() as u16) + 22,
         (UpdateFlow::Downloading(_), _) => {
@@ -157,7 +157,7 @@ fn build_update_indicator(app: &App) -> Line<'static> {
 
     match (&app.update_flow, &app.update_available) {
         (UpdateFlow::Idle, Some(info)) if info.self_updatable => {
-            Line::from(Span::styled(format!("↑ {} available · ^U ", info.version), accent))
+            Line::from(Span::styled(format!("↑ {} available · Ctrl+U ", info.version), accent))
         }
         (UpdateFlow::Idle, Some(info)) => {
             Line::from(Span::styled(format!("↑ {} · package manager ", info.version), dim))

@@ -3,3 +3,4 @@ pub mod config;
 pub mod docker;
 pub mod event;
 pub mod ui;
+pub mod update;

@@ -27,6 +27,7 @@ pub fn render_help(f: &mut Frame, area: Rect, app: &App) {
         row("+/_", "Screen mode (normal/half/full)"),
         row("?", "This help"),
         row("q", "Quit"),
+        row("Ctrl+U", "Check for / install update"),
         Line::from(""),
         Line::from(vec![Span::styled(" CONTAINER", section)]),
         Line::from(""),

@@ -14,10 +14,11 @@ pub mod stats_compare;
 pub mod stats_panel;
 pub mod theme;
 pub mod top;
+pub mod update_modal;
 
 use crate::app::{self, App, Focus, InputMode, SidebarSection};
 use crate::ui::theme::{self as thm, icons};
-use ratatui::layout::Constraint;
+use ratatui::layout::{Alignment, Constraint, Layout};
 use ratatui::prelude::*;
 use ratatui::widgets::{Cell, Paragraph, Row, Table};
 
@@ -83,8 +84,20 @@ pub fn draw(f: &mut Frame, app: &App) {
         SidebarSection::Networks => render_network_detail(f, content_inner, app),
     }
 
-    let status_line = build_status_line(app);
-    f.render_widget(Paragraph::new(status_line), app_layout.status_bar);
+    // Status bar split: left = normal hints, right = update indicator.
+    let right_width = update_indicator_width(app);
+    let status_areas =
+        Layout::horizontal([Constraint::Min(0), Constraint::Length(right_width)]).split(app_layout.status_bar);
+    let left_area = status_areas[0];
+    let right_area = status_areas[1];
+
+    f.render_widget(Paragraph::new(build_status_line(app)), left_area);
+    if right_width > 0 {
+        f.render_widget(
+            Paragraph::new(build_update_indicator(app)).alignment(Alignment::Right),
+            right_area,
+        );
+    }
 
     // Popups render on top of everything else.
     if app.show_help {
@@ -101,6 +114,72 @@ pub fn draw(f: &mut Frame, app: &App) {
     }
     if app.pending_confirm.is_some() {
         confirm::render_confirm(f, f.area(), app);
+    }
+    update_modal::render(f, f.area(), app);
+}
+
+fn update_indicator_width(app: &App) -> u16 {
+    use crate::app::UpdateFlow;
+    match (&app.update_flow, &app.update_available) {
+        (UpdateFlow::Idle, None) => 0,
+        (UpdateFlow::Idle, Some(info)) if info.self_updatable => {
+            // e.g. "↑ 0.3.1 available · Ctrl+U " — keep a couple of spare cells.
+            (info.version.chars().count() as u16) + 24
+        }
+        (UpdateFlow::Idle, Some(info)) => (info.version.chars().count() as u16) + 22,
+        (UpdateFlow::Downloading(_), _) => {
+            let version_len = app
+                .update_available
+                .as_ref()
+                .map(|i| i.version.chars().count())
+                .unwrap_or(6);
+            (version_len as u16) + 22
+        }
+        (UpdateFlow::Installing, _) => 18,
+        (UpdateFlow::InstalledPendingRestart, _) => {
+            let version_len = app
+                .update_available
+                .as_ref()
+                .map(|i| i.version.chars().count())
+                .unwrap_or(6);
+            (version_len as u16) + 24
+        }
+        // Modal owns the screen in these states — hide the right segment.
+        (UpdateFlow::Confirming, _) | (UpdateFlow::Complete, _) | (UpdateFlow::Failed(_), _) => 0,
+    }
+}
+
+fn build_update_indicator(app: &App) -> Line<'static> {
+    use crate::app::UpdateFlow;
+    let t = &app.theme;
+    let accent = Style::default().fg(t.accent_primary).add_modifier(Modifier::BOLD);
+    let dim = Style::default().fg(t.fg_muted);
+
+    match (&app.update_flow, &app.update_available) {
+        (UpdateFlow::Idle, Some(info)) if info.self_updatable => {
+            Line::from(Span::styled(format!("↑ {} available · Ctrl+U ", info.version), accent))
+        }
+        (UpdateFlow::Idle, Some(info)) => {
+            Line::from(Span::styled(format!("↑ {} · package manager ", info.version), dim))
+        }
+        (UpdateFlow::Downloading(p), _) => {
+            let version = app
+                .update_available
+                .as_ref()
+                .map(|i| i.version.clone())
+                .unwrap_or_else(|| "update".to_string());
+            Line::from(Span::styled(format!("↓ downloading {} {}% ", version, p), accent))
+        }
+        (UpdateFlow::Installing, _) => Line::from(Span::styled("↓ installing… ".to_string(), accent)),
+        (UpdateFlow::InstalledPendingRestart, _) => {
+            let version = app
+                .update_available
+                .as_ref()
+                .map(|i| i.version.clone())
+                .unwrap_or_default();
+            Line::from(Span::styled(format!("✓ {} installed · restart ", version), accent))
+        }
+        _ => Line::from(""),
     }
 }
 

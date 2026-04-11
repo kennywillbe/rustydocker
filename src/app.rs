@@ -176,6 +176,34 @@ pub struct App {
     pub hooks: Vec<crate::config::Hook>,
     pub docker_host: Option<String>,
     pub theme: crate::ui::theme::Theme,
+    pub check_updates: bool,
+    pub update_available: Option<UpdateInfo>,
+    pub update_flow: UpdateFlow,
+}
+
+/// Information about an available update, populated by the background
+/// check. `self_updatable` is false for AUR / Homebrew / system installs.
+#[derive(Debug, Clone)]
+pub struct UpdateInfo {
+    pub version: String,
+    pub self_updatable: bool,
+}
+
+/// Transient state of the update flow. `Idle` is the common case;
+/// `Confirming..Failed` are modal states that own keyboard input.
+/// `InstalledPendingRestart` is sticky: a non-modal banner nudging
+/// the user to restart after they dismissed the complete modal with
+/// `[l] later`.
+#[derive(Debug, Clone, Default)]
+pub enum UpdateFlow {
+    #[default]
+    Idle,
+    Confirming,
+    Downloading(u8),
+    Installing,
+    Complete,
+    InstalledPendingRestart,
+    Failed(String),
 }
 
 impl App {
@@ -223,6 +251,9 @@ impl App {
             hooks: config.hooks.clone(),
             docker_host: None,
             theme: crate::ui::theme::Theme::from_name(&config.theme),
+            check_updates: config.check_updates,
+            update_available: None,
+            update_flow: UpdateFlow::default(),
         }
     }
 
@@ -447,11 +478,40 @@ impl App {
         match key.code {
             KeyCode::Char('q') => return AppAction::Quit,
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return AppAction::Quit,
+            KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                return AppAction::RequestUpdateCheck;
+            }
             KeyCode::Char('?') => {
                 self.show_help = !self.show_help;
                 return AppAction::None;
             }
             _ => {}
+        }
+
+        // Update flow modals own keyboard input while they're active.
+        // Must come before pending_confirm so nested modals route correctly.
+        match self.update_flow {
+            UpdateFlow::Confirming => match key.code {
+                KeyCode::Char('y') | KeyCode::Enter => return AppAction::ConfirmUpdate,
+                KeyCode::Char('n') | KeyCode::Esc => return AppAction::CancelUpdate,
+                _ => return AppAction::None,
+            },
+            UpdateFlow::Downloading(_) | UpdateFlow::Installing => {
+                // Atomic operation — all keys swallowed, no cancel.
+                return AppAction::None;
+            }
+            UpdateFlow::Complete => match key.code {
+                KeyCode::Char('r') | KeyCode::Enter => return AppAction::RestartAfterUpdate,
+                KeyCode::Char('l') | KeyCode::Esc => return AppAction::DismissAfterUpdate,
+                _ => return AppAction::None,
+            },
+            UpdateFlow::Failed(_) => match key.code {
+                KeyCode::Esc | KeyCode::Enter => return AppAction::CancelUpdate,
+                _ => return AppAction::None,
+            },
+            UpdateFlow::Idle | UpdateFlow::InstalledPendingRestart => {
+                // Non-modal — fall through to normal key handling.
+            }
         }
 
         if self.show_help {
@@ -1004,6 +1064,12 @@ pub enum AppAction {
     PruneNetworks,
     ExportLogs,
     RunCustomCommand(usize),
+    // Update flow
+    RequestUpdateCheck,
+    ConfirmUpdate,
+    CancelUpdate,
+    RestartAfterUpdate,
+    DismissAfterUpdate,
 }
 
 #[cfg(test)]

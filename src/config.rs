@@ -34,6 +34,10 @@ pub struct AppConfig {
     /// Theme name. Known values: `"ember"` (default) and `"classic"`.
     #[serde(default = "default_theme")]
     pub theme: String,
+    /// Whether to check GitHub for new releases on startup.
+    /// Override at runtime with RUSTYDOCKER_NO_UPDATE_CHECK=1.
+    #[serde(default = "default_check_updates")]
+    pub check_updates: bool,
 }
 
 fn default_cpu_alert_threshold() -> f64 {
@@ -48,6 +52,10 @@ fn default_theme() -> String {
     "ember".to_string()
 }
 
+fn default_check_updates() -> bool {
+    true
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
@@ -60,6 +68,7 @@ impl Default for AppConfig {
             hooks: vec![],
             docker_host: None,
             theme: default_theme(),
+            check_updates: true,
         }
     }
 }

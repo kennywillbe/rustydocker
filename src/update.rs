@@ -93,6 +93,55 @@ fn fetch_latest_from_github() -> Option<String> {
     Some(latest.version.trim_start_matches('v').to_string())
 }
 
+/// Events emitted by the self-update runner as it progresses.
+#[derive(Debug, Clone)]
+pub enum UpdateProgress {
+    /// Coarse progress — 0 or 50. self_update 0.41 doesn't expose a
+    /// fine-grained callback, so we emit checkpoints.
+    Downloading(u8),
+    Installing,
+    Done,
+    Failed(String),
+}
+
+/// Run the self-update synchronously. Call this via
+/// `tokio::task::spawn_blocking` from the main loop. All outcomes are
+/// reported via `progress_tx`, including the error case — this function
+/// never returns a Result.
+pub fn run_self_update(target_version: &str, progress_tx: UnboundedSender<UpdateProgress>) {
+    let _ = progress_tx.send(UpdateProgress::Downloading(0));
+
+    let updater = match self_update::backends::github::Update::configure()
+        .repo_owner(GITHUB_REPO_OWNER)
+        .repo_name(GITHUB_REPO_NAME)
+        .bin_name("rustydocker")
+        .target(self_update::get_target())
+        .show_download_progress(false)
+        .show_output(false)
+        .current_version(env!("CARGO_PKG_VERSION"))
+        .target_version_tag(&format!("v{}", target_version))
+        .build()
+    {
+        Ok(u) => u,
+        Err(e) => {
+            let _ = progress_tx.send(UpdateProgress::Failed(format!("setup: {e}")));
+            return;
+        }
+    };
+
+    let _ = progress_tx.send(UpdateProgress::Downloading(50));
+
+    match updater.update() {
+        Ok(_status) => {
+            let _ = progress_tx.send(UpdateProgress::Installing);
+            let _ = progress_tx.send(UpdateProgress::Done);
+        }
+        Err(e) => {
+            let _ = progress_tx.send(UpdateProgress::Failed(e.to_string()));
+        }
+    }
+}
+
 /// True iff `latest` parses as a strictly-newer semver than `current`
 /// AND `latest` is not a pre-release. Garbage input returns false.
 pub fn is_newer_stable(current: &str, latest: &str) -> bool {

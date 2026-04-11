@@ -12,11 +12,28 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     outputs:
-      release_created: ${{ steps.release.outputs.release_created }}
-      tag_name: ${{ steps.release.outputs.tag_name }}
+      release_created: ${{ steps.release.outputs.release_created || steps.release_retry.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name || steps.release_retry.outputs.tag_name }}
     steps:
+      # release-please-action occasionally hits a GraphQL vs REST cache
+      # race when labeling a newly-created release PR — the PR exists via
+      # REST but GraphQL hasn't seen it yet, so addLabelsToLabelable fails
+      # with "Could not resolve to a node with the global id of 'PR_…'".
+      # When that happens, the PR is created but unlabeled, and the next
+      # run can't find a "pending" release to tag — breaking the whole
+      # release flow. Retry once on failure; the second call is idempotent
+      # (finds the existing PR) and GraphQL has caught up by then.
       - uses: googleapis/release-please-action@v4
         id: release
+        continue-on-error: true
+        with:
+          release-type: rust
+          token: ${{ secrets.PAT_TOKEN }}
+
+      - name: Retry release-please on failure
+        if: steps.release.outcome == 'failure'
+        uses: googleapis/release-please-action@v4
+        id: release_retry
         with:
           release-type: rust
           token: ${{ secrets.PAT_TOKEN }}

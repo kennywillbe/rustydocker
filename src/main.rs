@@ -41,6 +41,12 @@ fn restore_terminal() {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // clap handles --version / --help before we touch the terminal.
+    // This MUST be the first statement in main — otherwise terminal
+    // setup runs on non-tty stdio and fails with ENXIO (os error 6),
+    // and clap never gets to short-circuit on --version / --help.
+    let cli = Cli::parse();
+
     // Restore terminal on panic so the shell stays usable
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -54,7 +60,6 @@ async fn main() -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let cli = Cli::parse();
     let result = run_app(&mut terminal, cli).await;
 
     restore_terminal();

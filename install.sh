@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -euo pipefail
+
 # allow specifying different destination directory
 DIR="${DIR:-"$HOME/.local/bin"}"
 
@@ -20,7 +22,8 @@ GITHUB_URL="https://github.com/kennywillbe/rustydocker/releases/download/${GITHU
 # install/update the local binary
 curl -L -o rustydocker.tar.gz "$GITHUB_URL"
 tar xzvf rustydocker.tar.gz rustydocker
-install -Dm 755 rustydocker -t "$DIR"
+mkdir -p "$DIR"
+install -m 755 rustydocker "$DIR/rustydocker"
 rm rustydocker rustydocker.tar.gz
 
 echo "rustydocker installed to $DIR/rustydocker"

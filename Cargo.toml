@@ -33,6 +33,7 @@ serde_json = "1"
 self_update = { version = "0.44", default-features = false, features = [
     "archive-tar",
     "compression-flate2",
+    "reqwest",
     "rustls",
 ] }
 

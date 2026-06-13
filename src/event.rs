@@ -24,16 +24,8 @@ impl EventHandler {
             loop {
                 if event::poll(tick_duration).unwrap_or(false) {
                     match event::read() {
-                        Ok(CrosstermEvent::Key(key)) => {
-                            if tx_clone.send(AppEvent::Key(key)).is_err() {
-                                break;
-                            }
-                        }
-                        Ok(CrosstermEvent::Mouse(mouse)) => {
-                            if tx_clone.send(AppEvent::Mouse(mouse)).is_err() {
-                                break;
-                            }
-                        }
+                        Ok(CrosstermEvent::Key(key)) if tx_clone.send(AppEvent::Key(key)).is_err() => break,
+                        Ok(CrosstermEvent::Mouse(mouse)) if tx_clone.send(AppEvent::Mouse(mouse)).is_err() => break,
                         _ => {}
                     }
                 } else {

@@ -23,7 +23,7 @@ jobs:
       # run can't find a "pending" release to tag — breaking the whole
       # release flow. Retry once on failure; the second call is idempotent
       # (finds the existing PR) and GraphQL has caught up by then.
-      - uses: googleapis/release-please-action@v4
+      - uses: googleapis/release-please-action@v5
         id: release
         continue-on-error: true
         with:
@@ -32,7 +32,7 @@ jobs:
 
       - name: Retry release-please on failure
         if: steps.release.outcome == 'failure'
-        uses: googleapis/release-please-action@v4
+        uses: googleapis/release-please-action@v5
         id: release_retry
         with:
           release-type: rust

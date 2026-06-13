@@ -692,26 +692,22 @@ impl App {
                 };
             }
             KeyCode::Char('x') => self.show_cleanup = !self.show_cleanup,
-            KeyCode::Char(' ') => {
-                if self.sidebar_section == SidebarSection::Services {
-                    if let Some(id) = self.selected_container_id().map(|s| s.to_string()) {
-                        if self.selected_containers.contains(&id) {
-                            self.selected_containers.remove(&id);
-                        } else {
-                            self.selected_containers.insert(id);
-                        }
+            KeyCode::Char(' ') if self.sidebar_section == SidebarSection::Services => {
+                if let Some(id) = self.selected_container_id().map(|s| s.to_string()) {
+                    if self.selected_containers.contains(&id) {
+                        self.selected_containers.remove(&id);
+                    } else {
+                        self.selected_containers.insert(id);
                     }
-                    self.next_item();
                 }
+                self.next_item();
             }
-            KeyCode::Char('*') => {
-                if self.sidebar_section == SidebarSection::Services {
-                    if let Some(id) = self.selected_container_id().map(|s| s.to_string()) {
-                        if self.pinned_containers.contains(&id) {
-                            self.pinned_containers.remove(&id);
-                        } else {
-                            self.pinned_containers.insert(id);
-                        }
+            KeyCode::Char('*') if self.sidebar_section == SidebarSection::Services => {
+                if let Some(id) = self.selected_container_id().map(|s| s.to_string()) {
+                    if self.pinned_containers.contains(&id) {
+                        self.pinned_containers.remove(&id);
+                    } else {
+                        self.pinned_containers.insert(id);
                     }
                 }
             }
@@ -735,84 +731,74 @@ impl App {
                 }
                 return AppAction::None;
             }
-            KeyCode::Char('m') => {
-                if self.active_tab == Tab::Logs {
-                    if let Some(id) = self.selected_container_id() {
-                        let log_len = self.logs.get(id).map(|l| l.len()).unwrap_or(0);
-                        if log_len > 0 {
-                            let line_idx = if self.log_scroll_offset == 0 {
-                                log_len.saturating_sub(1)
-                            } else {
-                                log_len.saturating_sub(self.log_scroll_offset as usize + 1)
-                            };
-                            if let Some(pos) = self.log_bookmarks.iter().position(|&b| b == line_idx) {
-                                self.log_bookmarks.remove(pos);
-                            } else {
-                                self.log_bookmarks.push(line_idx);
-                                self.log_bookmarks.sort();
-                            }
-                        }
-                    }
-                }
-            }
-            KeyCode::Char('n') => {
-                if self.active_tab == Tab::Logs && !self.log_bookmarks.is_empty() {
-                    if let Some(id) = self.selected_container_id() {
-                        let log_len = self.logs.get(id).map(|l| l.len()).unwrap_or(0);
-                        let current_line = if self.log_scroll_offset == 0 {
+            KeyCode::Char('m') if self.active_tab == Tab::Logs => {
+                if let Some(id) = self.selected_container_id() {
+                    let log_len = self.logs.get(id).map(|l| l.len()).unwrap_or(0);
+                    if log_len > 0 {
+                        let line_idx = if self.log_scroll_offset == 0 {
                             log_len.saturating_sub(1)
                         } else {
                             log_len.saturating_sub(self.log_scroll_offset as usize + 1)
                         };
-                        if let Some(&next) = self.log_bookmarks.iter().find(|&&b| b > current_line) {
-                            self.log_scroll_offset = log_len.saturating_sub(next + 1) as u16;
-                        } else if let Some(&first) = self.log_bookmarks.first() {
-                            self.log_scroll_offset = log_len.saturating_sub(first + 1) as u16;
-                        }
-                    }
-                }
-            }
-            KeyCode::Char('T') => {
-                if self.active_tab == Tab::Logs {
-                    if self.show_log_diff {
-                        // Exit diff mode
-                        self.show_log_diff = false;
-                        self.log_snapshot = None;
-                    } else if self.log_snapshot.is_some() {
-                        // Show diff
-                        self.show_log_diff = true;
-                    } else {
-                        // Take snapshot
-                        if let Some(id) = self.selected_container_id() {
-                            self.log_snapshot = self.logs.get(id).cloned();
-                        }
-                        return AppAction::None;
-                    }
-                }
-            }
-            KeyCode::Char('C') => {
-                if self.sidebar_section == SidebarSection::Services {
-                    if self.compare_container_id.is_some() {
-                        self.compare_container_id = None;
-                    } else {
-                        self.compare_container_id = self.selected_container_id().map(|s| s.to_string());
-                    }
-                }
-            }
-            KeyCode::Char('N') => {
-                if self.active_tab == Tab::Logs && !self.log_bookmarks.is_empty() {
-                    if let Some(id) = self.selected_container_id() {
-                        let log_len = self.logs.get(id).map(|l| l.len()).unwrap_or(0);
-                        let current_line = if self.log_scroll_offset == 0 {
-                            log_len.saturating_sub(1)
+                        if let Some(pos) = self.log_bookmarks.iter().position(|&b| b == line_idx) {
+                            self.log_bookmarks.remove(pos);
                         } else {
-                            log_len.saturating_sub(self.log_scroll_offset as usize + 1)
-                        };
-                        if let Some(&prev) = self.log_bookmarks.iter().rev().find(|&&b| b < current_line) {
-                            self.log_scroll_offset = log_len.saturating_sub(prev + 1) as u16;
-                        } else if let Some(&last) = self.log_bookmarks.last() {
-                            self.log_scroll_offset = log_len.saturating_sub(last + 1) as u16;
+                            self.log_bookmarks.push(line_idx);
+                            self.log_bookmarks.sort();
                         }
+                    }
+                }
+            }
+            KeyCode::Char('n') if self.active_tab == Tab::Logs && !self.log_bookmarks.is_empty() => {
+                if let Some(id) = self.selected_container_id() {
+                    let log_len = self.logs.get(id).map(|l| l.len()).unwrap_or(0);
+                    let current_line = if self.log_scroll_offset == 0 {
+                        log_len.saturating_sub(1)
+                    } else {
+                        log_len.saturating_sub(self.log_scroll_offset as usize + 1)
+                    };
+                    if let Some(&next) = self.log_bookmarks.iter().find(|&&b| b > current_line) {
+                        self.log_scroll_offset = log_len.saturating_sub(next + 1) as u16;
+                    } else if let Some(&first) = self.log_bookmarks.first() {
+                        self.log_scroll_offset = log_len.saturating_sub(first + 1) as u16;
+                    }
+                }
+            }
+            KeyCode::Char('T') if self.active_tab == Tab::Logs => {
+                if self.show_log_diff {
+                    // Exit diff mode
+                    self.show_log_diff = false;
+                    self.log_snapshot = None;
+                } else if self.log_snapshot.is_some() {
+                    // Show diff
+                    self.show_log_diff = true;
+                } else {
+                    // Take snapshot
+                    if let Some(id) = self.selected_container_id() {
+                        self.log_snapshot = self.logs.get(id).cloned();
+                    }
+                    return AppAction::None;
+                }
+            }
+            KeyCode::Char('C') if self.sidebar_section == SidebarSection::Services => {
+                if self.compare_container_id.is_some() {
+                    self.compare_container_id = None;
+                } else {
+                    self.compare_container_id = self.selected_container_id().map(|s| s.to_string());
+                }
+            }
+            KeyCode::Char('N') if self.active_tab == Tab::Logs && !self.log_bookmarks.is_empty() => {
+                if let Some(id) = self.selected_container_id() {
+                    let log_len = self.logs.get(id).map(|l| l.len()).unwrap_or(0);
+                    let current_line = if self.log_scroll_offset == 0 {
+                        log_len.saturating_sub(1)
+                    } else {
+                        log_len.saturating_sub(self.log_scroll_offset as usize + 1)
+                    };
+                    if let Some(&prev) = self.log_bookmarks.iter().rev().find(|&&b| b < current_line) {
+                        self.log_scroll_offset = log_len.saturating_sub(prev + 1) as u16;
+                    } else if let Some(&last) = self.log_bookmarks.last() {
+                        self.log_scroll_offset = log_len.saturating_sub(last + 1) as u16;
                     }
                 }
             }
@@ -975,7 +961,7 @@ impl App {
                 matcher.fuzzy_match(name, filter).map(|score| (score, i, c))
             })
             .collect();
-        scored.sort_by(|a, b| b.0.cmp(&a.0));
+        scored.sort_by_key(|b| std::cmp::Reverse(b.0));
         scored.into_iter().map(|(_, i, c)| (i, c)).collect()
     }
 
@@ -994,7 +980,7 @@ impl App {
                 matcher.fuzzy_match(tag, filter).map(|score| (score, i, img))
             })
             .collect();
-        scored.sort_by(|a, b| b.0.cmp(&a.0));
+        scored.sort_by_key(|b| std::cmp::Reverse(b.0));
         scored.into_iter().map(|(_, i, img)| (i, img)).collect()
     }
 
@@ -1010,7 +996,7 @@ impl App {
             .enumerate()
             .filter_map(|(i, v)| matcher.fuzzy_match(&v.name, filter).map(|score| (score, i, v)))
             .collect();
-        scored.sort_by(|a, b| b.0.cmp(&a.0));
+        scored.sort_by_key(|b| std::cmp::Reverse(b.0));
         scored.into_iter().map(|(_, i, v)| (i, v)).collect()
     }
 
@@ -1029,7 +1015,7 @@ impl App {
                 matcher.fuzzy_match(name, filter).map(|score| (score, i, n))
             })
             .collect();
-        scored.sort_by(|a, b| b.0.cmp(&a.0));
+        scored.sort_by_key(|b| std::cmp::Reverse(b.0));
         scored.into_iter().map(|(_, i, n)| (i, n)).collect()
     }
 }

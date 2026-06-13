@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.2](https://github.com/kennywillbe/rustydocker/compare/v0.4.1...v0.4.2) (2026-06-13)
+
+
+### Bug Fixes
+
+* make installer portable ([afd20b4](https://github.com/kennywillbe/rustydocker/commit/afd20b481f909e75c69a9db0411fa92f1c363940))
+
 ## [0.4.1](https://github.com/kennywillbe/rustydocker/compare/v0.4.0...v0.4.1) (2026-06-13)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/kennywillbe/rustydocker/compare/v0.4.0...v0.4.1) (2026-06-13)
+
+
+### Bug Fixes
+
+* resolve clippy warnings ([be8c4ae](https://github.com/kennywillbe/rustydocker/commit/be8c4ae982bde00a4781397909fd55b9519309e7))
+
 ## [0.4.0](https://github.com/kennywillbe/rustydocker/compare/v0.3.1...v0.4.0) (2026-04-11)
 
 

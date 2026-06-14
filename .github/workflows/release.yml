@@ -15,6 +15,15 @@ jobs:
       release_created: ${{ steps.release.outputs.release_created || steps.release_retry.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name || steps.release_retry.outputs.tag_name }}
     steps:
+      - uses: actions/create-github-app-token@v3
+        id: release-token
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-issues: write
+          permission-pull-requests: write
+
       # release-please-action occasionally hits a GraphQL vs REST cache
       # race when labeling a newly-created release PR — the PR exists via
       # REST but GraphQL hasn't seen it yet, so addLabelsToLabelable fails
@@ -28,7 +37,7 @@ jobs:
         continue-on-error: true
         with:
           release-type: rust
-          token: ${{ secrets.PAT_TOKEN }}
+          token: ${{ steps.release-token.outputs.token }}
 
       - name: Retry release-please on failure
         if: steps.release.outcome == 'failure'
@@ -36,7 +45,7 @@ jobs:
         id: release_retry
         with:
           release-type: rust
-          token: ${{ secrets.PAT_TOKEN }}
+          token: ${{ steps.release-token.outputs.token }}
 
   build:
     needs: release-please

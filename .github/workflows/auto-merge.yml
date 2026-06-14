@@ -1,0 +1,36 @@
+name: Auto Merge
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  trusted-automation:
+    if: >
+      !github.event.pull_request.draft &&
+      github.event.pull_request.base.ref == 'master' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (
+        github.event.pull_request.user.login == 'dependabot[bot]' ||
+        (
+          startsWith(github.event.pull_request.head.ref, 'release-please--branches--master--components--rustydocker') &&
+          endsWith(github.event.pull_request.user.login, '[bot]')
+        )
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - run: gh pr merge "$PR_URL" --auto --squash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}

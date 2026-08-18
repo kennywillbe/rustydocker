@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.3](https://github.com/kennywillbe/rustydocker/compare/v0.4.2...v0.4.3) (2026-08-18)
+
+
+### Bug Fixes
+
+* scope compose actions to startup options ([#51](https://github.com/kennywillbe/rustydocker/issues/51)) ([238ddbb](https://github.com/kennywillbe/rustydocker/commit/238ddbbeadae8f733773840e7163c4f8f37f7b38))
+
 ## [0.4.2](https://github.com/kennywillbe/rustydocker/compare/v0.4.1...v0.4.2) (2026-06-13)
 
 

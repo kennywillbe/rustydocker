@@ -75,6 +75,11 @@ cd my-project
 rustydocker
 ```
 
+Compose actions keep the same file and project scope passed at startup. For
+example, `rustydocker -f compose.yml -f compose.dev.yml -p demo` applies `U`,
+`D`, and `R` to that exact merged Compose project. A configured `docker_host`
+is also forwarded to these actions.
+
 ## Keybindings
 
 ### Navigation

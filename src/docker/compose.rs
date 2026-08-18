@@ -2,6 +2,51 @@ use anyhow::Result;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::Path;
+use tokio::process::Command;
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ComposeInvocation {
+    files: Vec<String>,
+    project_name: Option<String>,
+    docker_host: Option<String>,
+}
+
+impl ComposeInvocation {
+    pub fn new(files: Vec<String>, project_name: Option<String>, docker_host: Option<String>) -> Self {
+        Self {
+            files,
+            project_name,
+            docker_host,
+        }
+    }
+
+    pub fn args(&self, action: &[&str]) -> Vec<String> {
+        let mut args = vec!["compose".to_string()];
+        for file in &self.files {
+            args.push("-f".to_string());
+            args.push(file.clone());
+        }
+        if let Some(project_name) = &self.project_name {
+            args.push("-p".to_string());
+            args.push(project_name.clone());
+        }
+        args.extend(action.iter().map(|arg| (*arg).to_string()));
+        args
+    }
+
+    pub fn command(&self, action: &[&str]) -> Command {
+        let mut command = Command::new("docker");
+        command.args(self.args(action));
+        if let Some(docker_host) = &self.docker_host {
+            command.env("DOCKER_HOST", docker_host);
+        }
+        command
+    }
+
+    pub async fn run(&self, action: &[&str]) -> std::io::Result<std::process::Output> {
+        self.command(action).output().await
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct ComposeProject {

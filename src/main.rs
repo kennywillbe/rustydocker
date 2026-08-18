@@ -14,7 +14,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use docker::client::DockerClient;
-use docker::compose::{find_compose_files, load_compose_project};
+use docker::compose::{find_compose_files, load_compose_project, ComposeInvocation};
 use docker::stats::parse_stats;
 use event::{AppEvent, EventHandler};
 use futures_util::StreamExt;
@@ -76,6 +76,11 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, cli: Cli
     let tick_rate_ms = cfg.tick_rate_ms;
     let docker_host = std::env::var("DOCKER_HOST").ok().or_else(|| cfg.docker_host.clone());
     let docker = DockerClient::new(docker_host.as_deref())?;
+    let compose_invocation = ComposeInvocation::new(
+        cli.compose_file.clone().unwrap_or_default(),
+        cli.project_name.clone(),
+        docker_host.clone(),
+    );
     let mut app = app::App::new(cfg);
     app.docker_host = docker_host;
     let mut events = EventHandler::new(tick_rate_ms);
@@ -264,9 +269,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, cli: Cli
                                 app.volumes = docker.list_volumes().await.unwrap_or_default();
                             }
                             AppAction::ComposeUp => {
-                                let status = std::process::Command::new("docker")
-                                    .args(["compose", "up", "-d"])
-                                    .output();
+                                let status = compose_invocation.run(&["up", "-d"]).await;
                                 match status {
                                     Ok(output) if output.status.success() => app.set_status("Compose up started"),
                                     Ok(output) => app.set_status(&format!("Error: {}", String::from_utf8_lossy(&output.stderr).trim())),
@@ -274,9 +277,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, cli: Cli
                                 }
                             }
                             AppAction::ComposeDown => {
-                                let status = std::process::Command::new("docker")
-                                    .args(["compose", "down"])
-                                    .output();
+                                let status = compose_invocation.run(&["down"]).await;
                                 match status {
                                     Ok(output) if output.status.success() => app.set_status("Compose down complete"),
                                     Ok(output) => app.set_status(&format!("Error: {}", String::from_utf8_lossy(&output.stderr).trim())),
@@ -284,9 +285,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, cli: Cli
                                 }
                             }
                             AppAction::ComposeRestart => {
-                                let status = std::process::Command::new("docker")
-                                    .args(["compose", "restart"])
-                                    .output();
+                                let status = compose_invocation.run(&["restart"]).await;
                                 match status {
                                     Ok(output) if output.status.success() => app.set_status("Compose restart complete"),
                                     Ok(output) => app.set_status(&format!("Error: {}", String::from_utf8_lossy(&output.stderr).trim())),

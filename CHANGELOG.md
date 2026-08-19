@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.0.0](https://github.com/kennywillbe/rustydocker/compare/v0.4.3...v1.0.0) (2026-08-19)
+## [0.5.0](https://github.com/kennywillbe/rustydocker/compare/v0.4.3...v0.5.0) (2026-08-19)
 
 
 ### ⚠ BREAKING CHANGES

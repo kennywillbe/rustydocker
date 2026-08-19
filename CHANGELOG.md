@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.0](https://github.com/kennywillbe/rustydocker/compare/v0.4.3...v1.0.0) (2026-08-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* DockerClient::new now accepts a resolved ConnectionSpec and the minimum supported Rust version is 1.88.
+
+### Features
+
+* ship v0.5 runtime and Docker workflows ([#53](https://github.com/kennywillbe/rustydocker/issues/53)) ([59cf063](https://github.com/kennywillbe/rustydocker/commit/59cf06343a190f65828e82503629893a105c3479))
+
 ## [0.4.3](https://github.com/kennywillbe/rustydocker/compare/v0.4.2...v0.4.3) (2026-08-18)
 
 

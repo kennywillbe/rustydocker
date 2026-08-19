@@ -1,4 +1,4 @@
-use bollard::container::Stats;
+use bollard::models::ContainerStatsResponse;
 
 pub struct StatsSnapshot {
     pub cpu_percent: f64,
@@ -8,24 +8,57 @@ pub struct StatsSnapshot {
     pub net_tx_bytes: f64,
 }
 
-pub fn parse_stats(stats: &Stats) -> StatsSnapshot {
-    let cpu_delta = stats.cpu_stats.cpu_usage.total_usage as f64 - stats.precpu_stats.cpu_usage.total_usage as f64;
-    let system_delta =
-        stats.cpu_stats.system_cpu_usage.unwrap_or(0) as f64 - stats.precpu_stats.system_cpu_usage.unwrap_or(0) as f64;
-    let num_cpus = stats.cpu_stats.online_cpus.unwrap_or(1) as f64;
+pub fn parse_stats(stats: &ContainerStatsResponse) -> StatsSnapshot {
+    let cpu_total = stats
+        .cpu_stats
+        .as_ref()
+        .and_then(|cpu| cpu.cpu_usage.as_ref())
+        .and_then(|usage| usage.total_usage)
+        .unwrap_or(0);
+    let precpu_total = stats
+        .precpu_stats
+        .as_ref()
+        .and_then(|cpu| cpu.cpu_usage.as_ref())
+        .and_then(|usage| usage.total_usage)
+        .unwrap_or(0);
+    let system_cpu = stats
+        .cpu_stats
+        .as_ref()
+        .and_then(|cpu| cpu.system_cpu_usage)
+        .unwrap_or(0);
+    let presystem_cpu = stats
+        .precpu_stats
+        .as_ref()
+        .and_then(|cpu| cpu.system_cpu_usage)
+        .unwrap_or(0);
+    let cpu_delta = cpu_total.saturating_sub(precpu_total) as f64;
+    let system_delta = system_cpu.saturating_sub(presystem_cpu) as f64;
+    let num_cpus = stats
+        .cpu_stats
+        .as_ref()
+        .and_then(|cpu| cpu.online_cpus)
+        .or(stats.num_procs)
+        .unwrap_or(1) as f64;
     let cpu_percent = if system_delta > 0.0 {
         (cpu_delta / system_delta) * num_cpus * 100.0
     } else {
         0.0
     };
 
-    use bollard::container::MemoryStatsStats;
-    let cache = match &stats.memory_stats.stats {
-        Some(MemoryStatsStats::V1(v1)) => v1.cache as f64,
-        _ => 0.0,
-    };
-    let memory_bytes = (stats.memory_stats.usage.unwrap_or(0) as f64 - cache).max(0.0);
-    let memory_limit = stats.memory_stats.limit.unwrap_or(1) as f64;
+    let memory_stats = stats.memory_stats.as_ref();
+    let cache = memory_stats
+        .and_then(|memory| memory.stats.as_ref())
+        .and_then(|values| {
+            values
+                .get("total_inactive_file")
+                .or_else(|| values.get("inactive_file"))
+                .or_else(|| values.get("cache"))
+        })
+        .copied()
+        .unwrap_or(0);
+    let memory_usage = memory_stats.and_then(|memory| memory.usage).unwrap_or(0);
+    let memory_bytes = memory_usage.saturating_sub(cache) as f64;
+    let memory_limit = memory_stats.and_then(|memory| memory.limit).unwrap_or(1) as f64;
     let memory_mb = memory_bytes / 1_048_576.0;
     let memory_limit_mb = memory_limit / 1_048_576.0;
 
@@ -33,8 +66,12 @@ pub fn parse_stats(stats: &Stats) -> StatsSnapshot {
         .networks
         .as_ref()
         .map(|nets| {
-            nets.values()
-                .fold((0u64, 0u64), |(rx, tx), net| (rx + net.rx_bytes, tx + net.tx_bytes))
+            nets.values().fold((0u64, 0u64), |(rx, tx), net| {
+                (
+                    rx.saturating_add(net.rx_bytes.unwrap_or(0)),
+                    tx.saturating_add(net.tx_bytes.unwrap_or(0)),
+                )
+            })
         })
         .unwrap_or((0, 0));
 

@@ -1,4 +1,5 @@
 use crate::app::{App, Focus, SidebarSection};
+use crate::docker::model::container_state;
 use crate::ui::theme::{self, icons, Theme};
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::prelude::*;
@@ -184,7 +185,7 @@ fn render_containers_section(f: &mut Frame, area: Rect, app: &App) {
                 .and_then(|n| n.first())
                 .map(|n| n.trim_start_matches('/').to_string())
                 .unwrap_or_else(|| "unknown".to_string());
-            let state = c.state.as_deref().unwrap_or("unknown");
+            let state = container_state(c).unwrap_or("unknown");
             let (glyph, glyph_style) = theme::state_style(t, state);
 
             let status_raw = c.status.as_deref().unwrap_or(state);

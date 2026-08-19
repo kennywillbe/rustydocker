@@ -1,24 +1,27 @@
-mod app;
-mod config;
-mod docker;
-mod event;
-mod ui;
-mod update;
-
 use anyhow::Result;
-use app::AppAction;
 use clap::Parser;
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use docker::client::DockerClient;
-use docker::compose::{find_compose_files, load_compose_project, ComposeInvocation};
-use docker::stats::parse_stats;
-use event::{AppEvent, EventHandler};
 use futures_util::StreamExt;
 use ratatui::prelude::*;
+use rustydocker::app::{self, AppAction};
+use rustydocker::config;
+use rustydocker::docker::client::DockerClient;
+use rustydocker::docker::compose::{
+    find_compose_files, load_compose_project, load_effective_project, ComposeInvocation,
+};
+use rustydocker::docker::connection;
+use rustydocker::docker::model::container_state;
+use rustydocker::docker::stats::parse_stats;
+use rustydocker::event::{AppEvent, EventHandler};
+use rustydocker::runtime::actions::ActionExecutor;
+use rustydocker::runtime::details::refresh_selected;
+use rustydocker::runtime::images::refresh_selected_image;
+use rustydocker::runtime::logs::{LogEvent, LogManager};
+use rustydocker::{ui, update};
 use std::io;
 use std::path::Path;
 
@@ -32,6 +35,14 @@ struct Cli {
     /// Docker compose project name
     #[arg(short = 'p', long = "project")]
     project_name: Option<String>,
+
+    /// Docker context (overrides DOCKER_CONTEXT and DOCKER_HOST)
+    #[arg(long = "context")]
+    docker_context: Option<String>,
+
+    /// Enable a Docker Compose profile (repeatable)
+    #[arg(long = "profile")]
+    compose_profiles: Vec<String>,
 }
 
 fn restore_terminal() {
@@ -74,13 +85,25 @@ async fn main() -> Result<()> {
 async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, cli: Cli) -> Result<()> {
     let cfg = config::AppConfig::load();
     let tick_rate_ms = cfg.tick_rate_ms;
-    let docker_host = std::env::var("DOCKER_HOST").ok().or_else(|| cfg.docker_host.clone());
-    let docker = DockerClient::new(docker_host.as_deref())?;
+    let resolved_connection = connection::resolve(cli.docker_context.as_deref(), &cfg)?;
+    let docker_host = resolved_connection.spec.host().map(str::to_owned);
+    let docker = DockerClient::new(&resolved_connection.spec)?;
+    let compose_profiles = if cli.compose_profiles.is_empty() {
+        cfg.compose_profiles.clone()
+    } else {
+        cli.compose_profiles.clone()
+    };
     let compose_invocation = ComposeInvocation::new(
         cli.compose_file.clone().unwrap_or_default(),
         cli.project_name.clone(),
         docker_host.clone(),
-    );
+    )
+    .with_context(resolved_connection.context.clone())
+    .with_profiles(compose_profiles)
+    .with_tls_cert_path(match &resolved_connection.spec {
+        connection::ConnectionSpec::Tls { cert_path, .. } => Some(cert_path.clone()),
+        _ => None,
+    });
     let mut app = app::App::new(cfg);
     app.docker_host = docker_host;
     let mut events = EventHandler::new(tick_rate_ms);
@@ -106,12 +129,23 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, cli: Cli
     } else {
         find_compose_files(Path::new("."))
     };
-    for path in &compose_files {
-        if let Ok(mut project) = load_compose_project(path) {
-            if let Some(ref name) = cli.project_name {
-                project.name = name.clone();
+    match load_effective_project(&compose_invocation).await {
+        Ok(project) if !project.services.is_empty() => app.projects.push(project),
+        Ok(_) => {}
+        Err(error) => {
+            // Keep the TUI useful when Compose is not installed or the current
+            // directory has no project, while making the degraded model visible.
+            for path in &compose_files {
+                if let Ok(mut project) = load_compose_project(path) {
+                    if let Some(ref name) = cli.project_name {
+                        project.name = name.clone();
+                    }
+                    app.projects.push(project);
+                }
             }
-            app.projects.push(project);
+            if !compose_files.is_empty() {
+                app.set_status(&format!("Compose config fallback: {error}"));
+            }
         }
     }
 
@@ -122,52 +156,14 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, cli: Cli
     app.volumes = docker.list_volumes().await.unwrap_or_default();
     app.networks = docker.list_networks().await.unwrap_or_default();
 
-    // Track the container ID we're streaming for
-    let mut streaming_id: Option<String> = None;
-
-    // Start log/stats streams for first container
-    type LogStream<'a> = std::pin::Pin<
-        Box<dyn futures_util::Stream<Item = Result<bollard::container::LogOutput, bollard::errors::Error>> + Send + 'a>,
-    >;
-    let mut log_stream: Option<LogStream<'_>> = None;
-
-    if let Some(id) = app.selected_container_id().map(|s| s.to_string()) {
-        // Load initial logs in one batch, then start follow stream
-        let initial_logs = docker
-            .container_logs_batch(&id, &app.log_tail_lines)
-            .await
-            .unwrap_or_default();
-        app.logs.insert(id.clone(), initial_logs);
-        app.log_bookmarks.clear();
-        log_stream = Some(Box::pin(docker.container_logs_follow(&id)));
-        if let Ok(inspect) = docker.inspect_container(&id).await {
-            let env_vars: Vec<(String, String)> = inspect
-                .config
-                .as_ref()
-                .and_then(|c| c.env.as_ref())
-                .map(|envs| {
-                    envs.iter()
-                        .filter_map(|e| e.split_once('=').map(|(k, v)| (k.to_string(), v.to_string())))
-                        .collect()
-                })
-                .unwrap_or_default();
-            app.container_env = Some(env_vars);
-            app.container_inspect = Some(inspect);
-        } else {
-            app.container_env = None;
-            app.container_inspect = None;
-        }
-        if let Ok(top) = docker.container_top(&id).await {
-            app.container_top = Some(top);
-        } else {
-            app.container_top = None;
-        }
-        streaming_id = Some(id);
-    }
+    let mut log_manager = LogManager::default();
+    log_manager.sync(&docker, &app.containers, &app.log_tail_lines);
+    refresh_selected(&mut app, &docker, false).await;
+    let mut action_executor = ActionExecutor::new(compose_invocation.clone());
 
     // Fetch initial stats for all running containers
     for container in &app.containers {
-        if container.state.as_deref() == Some("running") {
+        if container_state(container) == Some("running") {
             if let Some(id) = container.id.as_deref() {
                 if let Ok(stats) = docker.container_stats_oneshot(id).await {
                     let snapshot = parse_stats(&stats);
@@ -234,9 +230,9 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, cli: Cli
                                 if let Some(id) = app.selected_container_id().map(|s| s.to_string()) {
                                     crossterm::terminal::disable_raw_mode()?;
                                     execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture)?;
-                                    let _ = std::process::Command::new("docker")
-                                        .args(["exec", "-it", &id, "/bin/sh"])
-                                        .status();
+                                    let mut command = std::process::Command::new("docker");
+                                    resolved_connection.spec.configure_cli(&mut command, resolved_connection.context.as_deref());
+                                    let _ = command.args(["exec", "-it", &id, "/bin/sh"]).status();
                                     crossterm::terminal::enable_raw_mode()?;
                                     execute!(terminal.backend_mut(), EnterAlternateScreen, EnableMouseCapture)?;
                                     terminal.clear()?;
@@ -246,9 +242,9 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, cli: Cli
                                 if let Some(id) = app.selected_container_id().map(|s| s.to_string()) {
                                     crossterm::terminal::disable_raw_mode()?;
                                     execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture)?;
-                                    let _ = std::process::Command::new("docker")
-                                        .args(["attach", &id])
-                                        .status();
+                                    let mut command = std::process::Command::new("docker");
+                                    resolved_connection.spec.configure_cli(&mut command, resolved_connection.context.as_deref());
+                                    let _ = command.args(["attach", &id]).status();
                                     crossterm::terminal::enable_raw_mode()?;
                                     execute!(terminal.backend_mut(), EnterAlternateScreen, EnableMouseCapture)?;
                                     terminal.clear()?;
@@ -268,33 +264,55 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, cli: Cli
                                 }
                                 app.volumes = docker.list_volumes().await.unwrap_or_default();
                             }
-                            AppAction::ComposeUp => {
-                                let status = compose_invocation.run(&["up", "-d"]).await;
-                                match status {
-                                    Ok(output) if output.status.success() => app.set_status("Compose up started"),
-                                    Ok(output) => app.set_status(&format!("Error: {}", String::from_utf8_lossy(&output.stderr).trim())),
-                                    Err(e) => app.set_status(&format!("Error: {}", e)),
+                            AppAction::PullImage(reference) => {
+                                app.set_status(&format!("Pulling {reference}..."));
+                                action_executor.spawn_image_pull(docker.clone(), reference);
+                            }
+                            AppAction::RemoveImage => {
+                                if let Some(reference) = app.selected_image_reference().map(str::to_owned) {
+                                    match docker.remove_image(&reference, false).await {
+                                        Ok(()) => app.set_status(&format!("Removed {reference}")),
+                                        Err(error) => app.set_status(&format!("Error: {error}")),
+                                    }
+                                    app.images = docker.list_images().await.unwrap_or_default();
+                                    app.clamp_selected_index();
+                                    refresh_selected_image(&mut app, &docker).await;
                                 }
+                            }
+                            AppAction::ComposeUp => {
+                                app.set_status("Starting Compose project...");
+                                action_executor.spawn_compose(vec!["up", "-d"], "Compose up complete", false);
                             }
                             AppAction::ComposeDown => {
-                                let status = compose_invocation.run(&["down"]).await;
-                                match status {
-                                    Ok(output) if output.status.success() => app.set_status("Compose down complete"),
-                                    Ok(output) => app.set_status(&format!("Error: {}", String::from_utf8_lossy(&output.stderr).trim())),
-                                    Err(e) => app.set_status(&format!("Error: {}", e)),
-                                }
+                                app.set_status("Stopping Compose project...");
+                                action_executor.spawn_compose(vec!["down"], "Compose down complete", false);
                             }
                             AppAction::ComposeRestart => {
-                                let status = compose_invocation.run(&["restart"]).await;
-                                match status {
-                                    Ok(output) if output.status.success() => app.set_status("Compose restart complete"),
-                                    Ok(output) => app.set_status(&format!("Error: {}", String::from_utf8_lossy(&output.stderr).trim())),
-                                    Err(e) => app.set_status(&format!("Error: {}", e)),
+                                app.set_status("Restarting Compose project...");
+                                action_executor.spawn_compose(vec!["restart"], "Compose restart complete", false);
+                            }
+                            AppAction::ComposePull => {
+                                app.set_status("Pulling Compose images...");
+                                action_executor.spawn_compose(vec!["pull"], "Compose images pulled", true);
+                            }
+                            AppAction::ComposeRebuild => {
+                                app.set_status("Rebuilding Compose project...");
+                                action_executor.spawn_compose(
+                                    vec!["up", "-d", "--build"],
+                                    "Compose rebuild complete",
+                                    true,
+                                );
+                            }
+                            AppAction::ComposeWatchToggle => {
+                                match action_executor.toggle_compose_watch().await {
+                                    Ok(true) => app.set_status("Compose watch started"),
+                                    Ok(false) => app.set_status("Compose watch stopped"),
+                                    Err(error) => app.set_status(&format!("Error: {error}")),
                                 }
                             }
                             AppAction::StopAllContainers => {
                                 for c in &app.containers {
-                                    if c.state.as_deref() == Some("running") {
+                                    if container_state(c) == Some("running") {
                                         if let Some(id) = &c.id {
                                             let _ = docker.stop_container(id).await;
                                         }
@@ -304,7 +322,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, cli: Cli
                             }
                             AppAction::RemoveStoppedContainers => {
                                 for c in &app.containers {
-                                    if c.state.as_deref() == Some("exited") {
+                                    if container_state(c) == Some("exited") {
                                         if let Some(id) = &c.id {
                                             let _ = docker.remove_container(id).await;
                                         }
@@ -313,9 +331,9 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, cli: Cli
                                 app.set_status("Removed stopped containers");
                             }
                             AppAction::PruneContainers => {
-                                let _ = std::process::Command::new("docker")
-                                    .args(["container", "prune", "-f"])
-                                    .output();
+                                let mut command = std::process::Command::new("docker");
+                                resolved_connection.spec.configure_cli(&mut command, resolved_connection.context.as_deref());
+                                let _ = command.args(["container", "prune", "-f"]).output();
                                 app.set_status("Containers pruned");
                             }
                             AppAction::PruneNetworks => {
@@ -451,30 +469,12 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, cli: Cli
                             _ => {}
                         }
 
-                        // If selection changed, update streams
+                        // Refresh details through the runtime adapter when selection changes.
                         if prev_selected != app.selected_index || prev_section != app.sidebar_section {
-                            if let Some(id) = app.selected_container_id().map(|s| s.to_string()) {
-                                let initial = docker.container_logs_batch(&id, &app.log_tail_lines).await.unwrap_or_default();
-                                app.logs.insert(id.clone(), initial);
-                                app.log_bookmarks.clear();
-                                log_stream = Some(Box::pin(docker.container_logs_follow(&id)));
-                                if let Ok(inspect) = docker.inspect_container(&id).await {
-                                    let env_vars: Vec<(String, String)> = inspect.config.as_ref()
-                                        .and_then(|c| c.env.as_ref())
-                                        .map(|envs| envs.iter().filter_map(|e| e.split_once('=').map(|(k, v)| (k.to_string(), v.to_string()))).collect())
-                                        .unwrap_or_default();
-                                    app.container_env = Some(env_vars);
-                                    app.container_inspect = Some(inspect);
-                                } else {
-                                    app.container_env = None;
-                                    app.container_inspect = None;
-                                }
-                                if let Ok(top) = docker.container_top(&id).await {
-                                    app.container_top = Some(top);
-                                } else {
-                                    app.container_top = None;
-                                }
-                                streaming_id = Some(id);
+                            if app.sidebar_section == app::SidebarSection::Images {
+                                refresh_selected_image(&mut app, &docker).await;
+                            } else {
+                                refresh_selected(&mut app, &docker, true).await;
                             }
                         }
                     }
@@ -485,61 +485,39 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, cli: Cli
                         let rect = ratatui::layout::Rect::new(0, 0, size.width, size.height);
                         app.handle_mouse(mouse, rect);
 
-                        // If container selection changed, update streams
-                        if (prev_selected != app.selected_index || prev_section != app.sidebar_section)
-                            && app.sidebar_section == app::SidebarSection::Services
-                        {
-                            if let Some(id) = app.selected_container_id().map(|s| s.to_string()) {
-                                let initial = docker.container_logs_batch(&id, &app.log_tail_lines).await.unwrap_or_default();
-                                app.logs.insert(id.clone(), initial);
-                                app.log_bookmarks.clear();
-                                log_stream = Some(Box::pin(docker.container_logs_follow(&id)));
-                                if let Ok(inspect) = docker.inspect_container(&id).await {
-                                    let env_vars: Vec<(String, String)> = inspect.config.as_ref()
-                                        .and_then(|c| c.env.as_ref())
-                                        .map(|envs| envs.iter().filter_map(|e| e.split_once('=').map(|(k, v)| (k.to_string(), v.to_string()))).collect())
-                                        .unwrap_or_default();
-                                    app.container_env = Some(env_vars);
-                                    app.container_inspect = Some(inspect);
-                                } else {
-                                    app.container_env = None;
-                                    app.container_inspect = None;
-                                }
-                                if let Ok(top) = docker.container_top(&id).await {
-                                    app.container_top = Some(top);
-                                } else {
-                                    app.container_top = None;
-                                }
-                                streaming_id = Some(id);
+                        // If container selection changed, refresh its details.
+                        if prev_selected != app.selected_index || prev_section != app.sidebar_section {
+                            if app.sidebar_section == app::SidebarSection::Images {
+                                refresh_selected_image(&mut app, &docker).await;
+                            } else {
+                                refresh_selected(&mut app, &docker, true).await;
                             }
                         }
                     }
                     AppEvent::Tick => {
                         app.clear_expired_status();
                         tick_count += 1;
-                        if tick_count % 40 == 0 {
+                        if matches!(action_executor.poll_compose_watch(), Ok(Some(false))) {
+                            app.set_status("Compose watch exited");
+                        }
+                        if tick_count.is_multiple_of(40) {
                             let prev_id = app.selected_container_id().map(|s| s.to_string());
                             app.containers = docker.list_containers().await.unwrap_or_default();
                             app.sort_containers();
                             app.clamp_selected_index();
                             app.prune_stale_selections();
                             app.networks = docker.list_networks().await.unwrap_or_default();
-                            // If selected container changed after refresh, update streams
+                            log_manager.sync(&docker, &app.containers, &app.log_tail_lines);
+                            // If selected container changed after refresh, update details.
                             let new_id = app.selected_container_id().map(|s| s.to_string());
                             if new_id != prev_id {
-                                if let Some(ref id) = new_id {
-                                    let initial = docker.container_logs_batch(id, &app.log_tail_lines).await.unwrap_or_default();
-                                    app.logs.insert(id.clone(), initial);
-                                    app.log_bookmarks.clear();
-                                    log_stream = Some(Box::pin(docker.container_logs_follow(id)));
-                                    streaming_id = new_id;
-                                }
+                                refresh_selected(&mut app, &docker, true).await;
                             }
                         }
-                        if tick_count % 8 == 0 {
+                        if tick_count.is_multiple_of(8) {
                             // Collect stats for all running containers
                             for container in &app.containers {
-                                if container.state.as_deref() == Some("running") {
+                                if container_state(container) == Some("running") {
                                     if let Some(id) = container.id.as_deref() {
                                         if let Ok(stats) = docker.container_stats_oneshot(id).await {
                                             let snapshot = parse_stats(&stats);
@@ -609,9 +587,14 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, cli: Cli
                             app.sort_containers();
                             app.clamp_selected_index();
                             app.prune_stale_selections();
+                            log_manager.sync(&docker, &app.containers, &app.log_tail_lines);
                         }
                         Some(EventMessageTypeEnum::IMAGE) => {
                             app.images = docker.list_images().await.unwrap_or_default();
+                            if app.sidebar_section == app::SidebarSection::Images {
+                                app.clamp_selected_index();
+                                refresh_selected_image(&mut app, &docker).await;
+                            }
                         }
                         Some(EventMessageTypeEnum::VOLUME) => {
                             app.volumes = docker.list_volumes().await.unwrap_or_default();
@@ -623,28 +606,30 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, cli: Cli
                     }
                 }
             }
-            Some(log_result) = async {
-                if let Some(ref mut stream) = log_stream { stream.next().await } else { None }
-            } => {
-                if let Ok(output) = log_result {
-                    if let Some(ref id) = streaming_id {
-                        let entry = app.logs.entry(id.clone()).or_default();
-                        entry.push(output.to_string());
-                        // Drain all buffered log lines in one go (no re-render per line)
-                        while let Some(more) = {
-                            use futures_util::FutureExt;
-                            if let Some(ref mut s) = log_stream {
-                                s.next().now_or_never().flatten()
-                            } else {
-                                None
-                            }
-                        } {
-                            if let Ok(out) = more {
-                                entry.push(out.to_string());
+            Some(log_event) = log_manager.recv() => {
+                match log_event {
+                    LogEvent::Line { container_id, container_name, line } => {
+                        app.push_log(container_id, container_name, line);
+                    }
+                    LogEvent::StreamError { container_id, message } => {
+                        let short_id: String = container_id.chars().take(12).collect();
+                        app.set_status(&format!("Log stream {short_id}: {message}"));
+                    }
+                }
+            }
+            Some(outcome) = action_executor.recv() => {
+                match outcome {
+                    Ok(outcome) => {
+                        app.set_status(&outcome.message);
+                        if outcome.refresh_images {
+                            app.images = docker.list_images().await.unwrap_or_default();
+                            app.clamp_selected_index();
+                            if app.sidebar_section == app::SidebarSection::Images {
+                                refresh_selected_image(&mut app, &docker).await;
                             }
                         }
-                        if entry.len() > 1000 { entry.drain(..entry.len() - 1000); }
                     }
+                    Err(error) => app.set_status(&format!("Error: {error}")),
                 }
             }
             Some(outcome) = update_rx.recv() => {
@@ -667,5 +652,6 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, cli: Cli
             break;
         }
     }
+    action_executor.shutdown().await;
     Ok(())
 }

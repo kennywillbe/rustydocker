@@ -17,6 +17,7 @@ pub mod top;
 pub mod update_modal;
 
 use crate::app::{self, App, Focus, InputMode, SidebarSection};
+use crate::docker::model::container_state;
 use crate::ui::theme::{self as thm, icons};
 use ratatui::layout::{Alignment, Constraint, Layout};
 use ratatui::prelude::*;
@@ -245,6 +246,14 @@ fn build_status_line(app: &App) -> Line<'static> {
         ]);
     }
 
+    if app.input_mode == InputMode::PullImage {
+        return Line::from(vec![
+            Span::styled(" pull image: ", prompt_style),
+            Span::styled(app.image_pull_input.clone(), input_style),
+            Span::styled("_", Style::default().fg(t.accent_primary)),
+        ]);
+    }
+
     if let Some(ref msg) = app.status_message {
         let color = if msg.contains("pruned") || msg.contains("Started") {
             t.ok
@@ -259,7 +268,7 @@ fn build_status_line(app: &App) -> Line<'static> {
     let running = app
         .containers
         .iter()
-        .filter(|c| c.state.as_deref() == Some("running"))
+        .filter(|c| container_state(c) == Some("running"))
         .count();
     let stopped = app.containers.len() - running;
 
@@ -313,27 +322,68 @@ fn render_image_detail(f: &mut Frame, area: Rect, app: &App) {
         .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
         .unwrap_or_else(|| image.created.to_string());
 
-    let rows = vec![
-        Row::new(vec![
-            Cell::from(" Tag").style(thm::label_cell(t)),
-            Cell::from(tag.to_string()).style(thm::value_cell(t)),
+    let label = thm::dim_label(t);
+    let value = Style::default().fg(t.fg);
+    let mut lines = vec![
+        Line::from(vec![
+            Span::styled(" Tag          ", label),
+            Span::styled(tag.to_string(), thm::value_cell(t)),
         ]),
-        Row::new(vec![
-            Cell::from(" ID").style(thm::label_cell(t)),
-            Cell::from(id.to_string()).style(Style::default().fg(t.fg)),
+        Line::from(vec![
+            Span::styled(" ID           ", label),
+            Span::styled(id.to_string(), value),
         ]),
-        Row::new(vec![
-            Cell::from(" Size").style(thm::label_cell(t)),
-            Cell::from(size).style(Style::default().fg(t.fg)),
-        ]),
-        Row::new(vec![
-            Cell::from(" Created").style(thm::label_cell(t)),
-            Cell::from(created).style(Style::default().fg(t.fg)),
+        Line::from(vec![Span::styled(" Size         ", label), Span::styled(size, value)]),
+        Line::from(vec![
+            Span::styled(" Created      ", label),
+            Span::styled(created, value),
         ]),
     ];
-
-    let table = Table::new(rows, [Constraint::Length(12), Constraint::Min(20)]);
-    f.render_widget(table, area);
+    if let Some(inspect) = &app.image_inspect {
+        let platform = format!(
+            "{}/{}",
+            inspect.os.as_deref().unwrap_or("unknown"),
+            inspect.architecture.as_deref().unwrap_or("unknown")
+        );
+        let layers = inspect
+            .root_fs
+            .as_ref()
+            .and_then(|root| root.layers.as_ref())
+            .map(Vec::len)
+            .unwrap_or(0);
+        lines.push(Line::from(vec![
+            Span::styled(" Platform     ", label),
+            Span::styled(platform, value),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled(" Layers       ", label),
+            Span::styled(layers.to_string(), value),
+        ]));
+        if let Some(digest) = inspect.repo_digests.as_ref().and_then(|digests| digests.first()) {
+            lines.push(Line::from(vec![
+                Span::styled(" Digest       ", label),
+                Span::styled(digest.clone(), value),
+            ]));
+        }
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        " LAYER HISTORY",
+        thm::section_header(t, false),
+    )));
+    for layer in app
+        .image_history
+        .iter()
+        .take(area.height.saturating_sub(lines.len() as u16) as usize)
+    {
+        let command = layer.created_by.split_whitespace().collect::<Vec<_>>().join(" ");
+        let command: String = command.chars().take(72).collect();
+        lines.push(Line::from(vec![
+            Span::styled(format!(" {:>9}  ", format_size(layer.size)), label),
+            Span::styled(command, value),
+        ]));
+    }
+    f.render_widget(Paragraph::new(lines), area);
 }
 
 fn render_network_detail(f: &mut Frame, area: Rect, app: &App) {

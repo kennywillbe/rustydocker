@@ -159,27 +159,7 @@ pub fn render_all_logs(f: &mut Frame, area: Rect, app: &App) {
     let height = area.height as usize;
     const MAX_LINES: usize = 500;
 
-    // Walk containers, capturing each container's display name + a slice of
-    // its recent log lines. No per-line tuple clones.
-    let mut sources: Vec<(String, &[String])> = Vec::new();
-    let mut total: usize = 0;
-    for container in &app.containers {
-        let id = container.id.as_deref().unwrap_or("");
-        let Some(logs) = app.logs.get(id) else { continue };
-        if logs.is_empty() {
-            continue;
-        }
-        let name = container
-            .names
-            .as_ref()
-            .and_then(|n| n.first())
-            .map(|n| n.trim_start_matches('/').to_string())
-            .unwrap_or_else(|| "unknown".to_string());
-        total += logs.len();
-        sources.push((name, logs.as_slice()));
-    }
-
-    if total == 0 {
+    if app.all_logs.is_empty() {
         let msg = Paragraph::new("No logs from any container")
             .style(theme::dim_label(t))
             .alignment(Alignment::Center);
@@ -189,34 +169,25 @@ pub fn render_all_logs(f: &mut Frame, area: Rect, app: &App) {
 
     let prefix_style = Style::default().fg(t.accent_header);
 
-    // Produce owned lines — each row borrows from `sources` via String.
-    // Trim from the oldest side if we exceed MAX_LINES.
-    let skip = total.saturating_sub(MAX_LINES);
-    let mut lines: Vec<Line> = Vec::with_capacity(total.min(MAX_LINES));
-    let mut skipped = 0usize;
-    for (name, logs) in &sources {
-        let short = if name.chars().count() > 12 {
-            let cut: String = name.chars().take(11).collect();
+    let skip = app.all_logs.len().saturating_sub(MAX_LINES);
+    let mut lines: Vec<Line> = Vec::with_capacity(app.all_logs.len().min(MAX_LINES));
+    for entry in app.all_logs.iter().skip(skip) {
+        let short = if entry.container_name.chars().count() > 12 {
+            let cut: String = entry.container_name.chars().take(11).collect();
             format!("[{}…]", cut)
         } else {
-            format!("[{}]", name)
+            format!("[{}]", entry.container_name)
         };
-        for line in *logs {
-            if skipped < skip {
-                skipped += 1;
-                continue;
-            }
-            let base = log_level_style(line, t);
-            let mut spans: Vec<Span> = Vec::with_capacity(4);
-            spans.push(Span::styled(short.clone(), prefix_style));
-            spans.push(Span::raw(" "));
-            spans.extend(colorize_http_statuses(line, base, t));
-            lines.push(Line::from(spans));
-        }
+        let base = log_level_style(&entry.line, t);
+        let mut spans: Vec<Span> = Vec::with_capacity(4);
+        spans.push(Span::styled(short, prefix_style));
+        spans.push(Span::raw(" "));
+        spans.extend(colorize_http_statuses(&entry.line, base, t));
+        lines.push(Line::from(spans));
     }
 
     let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
-    let visible = total.min(MAX_LINES);
+    let visible = app.all_logs.len().min(MAX_LINES);
     let scroll_y = visible.saturating_sub(height) as u16;
     f.render_widget(paragraph.scroll((scroll_y, 0)), area);
 }

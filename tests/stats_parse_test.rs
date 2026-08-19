@@ -1,6 +1,7 @@
-use bollard::container::Stats;
+use bollard::models::ContainerStatsResponse;
 use rustydocker::docker::stats::parse_stats;
 
+#[allow(clippy::too_many_arguments)]
 fn make_stats_json(
     cpu_total: u64,
     precpu_total: u64,
@@ -67,6 +68,7 @@ fn make_stats_json(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn make_stats(
     cpu_total: u64,
     precpu_total: u64,
@@ -77,7 +79,7 @@ fn make_stats(
     mem_limit: u64,
     net_rx: u64,
     net_tx: u64,
-) -> Stats {
+) -> ContainerStatsResponse {
     let json = make_stats_json(
         cpu_total,
         precpu_total,
@@ -146,7 +148,7 @@ fn test_parse_stats_no_networks() {
   },
   "storage_stats": {}
 }"#;
-    let stats: Stats = serde_json::from_str(json).unwrap();
+    let stats: ContainerStatsResponse = serde_json::from_str(json).unwrap();
     let snap = parse_stats(&stats);
     assert_eq!(snap.net_rx_bytes, 0.0);
     assert_eq!(snap.net_tx_bytes, 0.0);

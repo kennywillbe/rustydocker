@@ -1,4 +1,5 @@
 use crate::app::App;
+use crate::docker::model::container_state;
 use crate::ui::theme;
 use ratatui::layout::Constraint;
 use ratatui::prelude::*;
@@ -61,7 +62,7 @@ pub fn render_info(f: &mut Frame, area: Rect, app: &App) {
         Cell::from(image.to_string()).style(val_style),
     ]));
 
-    let state = container.state.as_deref().unwrap_or("N/A");
+    let state = container_state(container).unwrap_or("N/A");
     let state_color = theme::state_color(t, state);
     rows.push(Row::new(vec![
         Cell::from(" State").style(key_style),

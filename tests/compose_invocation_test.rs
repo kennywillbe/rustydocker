@@ -43,3 +43,38 @@ fn invocation_forwards_configured_docker_host() {
 
     assert_eq!(docker_host, Some("tcp://docker.example:2375"));
 }
+
+#[test]
+fn invocation_forwards_context_and_profiles() {
+    let invocation = ComposeInvocation::new(
+        vec!["compose.yml".to_string()],
+        Some("demo".to_string()),
+        Some("tcp://ignored:2375".to_string()),
+    )
+    .with_context(Some("production".to_string()))
+    .with_profiles(vec!["debug".to_string(), "metrics".to_string()]);
+
+    assert_eq!(
+        invocation.args(&["config"]),
+        [
+            "compose",
+            "-f",
+            "compose.yml",
+            "-p",
+            "demo",
+            "--profile",
+            "debug",
+            "--profile",
+            "metrics",
+            "config",
+        ]
+    );
+    let command = invocation.command(&["config"]);
+    let envs: std::collections::HashMap<_, _> = command.as_std().get_envs().collect();
+    assert_eq!(
+        envs.get(std::ffi::OsStr::new("DOCKER_CONTEXT"))
+            .and_then(|value| *value),
+        Some(std::ffi::OsStr::new("production"))
+    );
+    assert_eq!(envs.get(std::ffi::OsStr::new("DOCKER_HOST")), Some(&None));
+}

@@ -7,6 +7,7 @@
 //! ```
 
 use crate::app::App;
+use crate::docker::model::container_state;
 use crate::ui::theme::{self as thm, icons, sparkline_iter, Theme};
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::prelude::*;
@@ -213,7 +214,7 @@ fn render_summary(f: &mut Frame, areas: [Rect; 3], app: &App, container_id: &str
 
     let container = app.containers.iter().find(|c| c.id.as_deref() == Some(container_id));
     let uptime = container.and_then(|c| c.status.as_deref()).unwrap_or("—");
-    let state = container.and_then(|c| c.state.as_deref()).unwrap_or("—");
+    let state = container.and_then(container_state).unwrap_or("—");
     let pid_count = app.container_top.as_ref().map(|rows| rows.len()).unwrap_or(0);
 
     let row1 = Line::from(vec![

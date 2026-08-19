@@ -23,6 +23,53 @@ fn test_new_app_defaults() {
 }
 
 #[test]
+fn test_all_logs_preserve_arrival_order_and_are_capped() {
+    let mut app = App::new(AppConfig::default());
+    app.push_log("a".to_string(), "api".to_string(), "first".to_string());
+    app.push_log("b".to_string(), "db".to_string(), "second".to_string());
+    assert_eq!(app.all_logs[0].container_name, "api");
+    assert_eq!(app.all_logs[1].container_name, "db");
+
+    for index in 0..5_100 {
+        app.push_log("a".to_string(), "api".to_string(), index.to_string());
+    }
+    assert_eq!(app.all_logs.len(), 5_000);
+    assert_eq!(app.logs["a"].len(), 1_000);
+}
+
+#[test]
+fn test_image_pull_and_remove_actions() {
+    let mut app = App::new(AppConfig::default());
+    app.sidebar_section = SidebarSection::Images;
+    app.images.push(ImageSummary {
+        id: "sha256:image".to_string(),
+        repo_tags: vec!["demo:latest".to_string()],
+        ..Default::default()
+    });
+
+    assert_eq!(app.handle_key(key(KeyCode::Char('P'))), AppAction::None);
+    assert_eq!(app.input_mode, InputMode::PullImage);
+    for character in "alpine:3.21".chars() {
+        app.handle_key(key(KeyCode::Char(character)));
+    }
+    assert_eq!(
+        app.handle_key(key(KeyCode::Enter)),
+        AppAction::PullImage("alpine:3.21".to_string())
+    );
+
+    assert_eq!(app.handle_key(key(KeyCode::Char('d'))), AppAction::None);
+    assert_eq!(app.handle_key(key(KeyCode::Char('y'))), AppAction::RemoveImage);
+}
+
+#[test]
+fn test_compose_extended_actions() {
+    let mut app = App::new(AppConfig::default());
+    assert_eq!(app.handle_key(key(KeyCode::Char('B'))), AppAction::ComposeRebuild);
+    assert_eq!(app.handle_key(key(KeyCode::Char('P'))), AppAction::ComposePull);
+    assert_eq!(app.handle_key(key(KeyCode::Char('W'))), AppAction::ComposeWatchToggle);
+}
+
+#[test]
 fn test_tab_cycling() {
     let mut app = App::new(AppConfig::default());
     assert_eq!(app.active_tab, Tab::Logs);
@@ -331,7 +378,7 @@ fn create_container_with_state(name: &str, state: &str) -> ContainerSummary {
     ContainerSummary {
         id: Some(name.to_string()),
         names: Some(vec![format!("/{}", name)]),
-        state: Some(state.to_string()),
+        state: Some(state.parse().expect("valid container state")),
         ..Default::default()
     }
 }

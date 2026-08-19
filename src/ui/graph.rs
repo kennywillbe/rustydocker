@@ -16,7 +16,7 @@ pub fn build_graph_lines(services: &[(String, Vec<String>)], selected: Option<&s
     // Find roots (no dependencies)
     let roots: Vec<&str> = all_names
         .iter()
-        .filter(|n| dep_map.get(*n).map_or(true, |d| d.is_empty()))
+        .filter(|n| dep_map.get(*n).is_none_or(|d| d.is_empty()))
         .copied()
         .collect();
 
@@ -36,7 +36,7 @@ pub fn build_graph_lines(services: &[(String, Vec<String>)], selected: Option<&s
                 !placed.contains(*n)
                     && dep_map
                         .get(*n)
-                        .map_or(true, |deps| deps.iter().all(|d| placed.contains(d.as_str())))
+                        .is_none_or(|deps| deps.iter().all(|d| placed.contains(d.as_str())))
             })
             .copied()
             .collect();
@@ -101,11 +101,22 @@ pub fn render_graph(f: &mut Frame, area: Rect, app: &App) {
 
     let mut all_services: Vec<(String, Vec<String>)> = vec![];
     let mut service_images: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut service_meta: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     for project in &app.projects {
         for svc in &project.services {
             all_services.push((svc.name.clone(), svc.depends_on.clone()));
             if let Some(ref img) = svc.image {
                 service_images.insert(svc.name.clone(), img.clone());
+            }
+            let mut badges = Vec::new();
+            if svc.has_build {
+                badges.push("build".to_string());
+            }
+            if !svc.profiles.is_empty() {
+                badges.push(format!("profiles:{}", svc.profiles.join(",")));
+            }
+            if !badges.is_empty() {
+                service_meta.insert(svc.name.clone(), badges.join(" · "));
             }
         }
     }
@@ -132,6 +143,12 @@ pub fn render_graph(f: &mut Frame, area: Rect, app: &App) {
                     let svc_name = &text[1..text.len() - 1];
                     if let Some(img) = service_images.get(svc_name) {
                         result_spans.push(Span::styled(format!(" ({})", img), Style::default().fg(t.fg_dim)));
+                    }
+                    if let Some(meta) = service_meta.get(svc_name) {
+                        result_spans.push(Span::styled(
+                            format!(" {{{meta}}}"),
+                            Style::default().fg(t.accent_header),
+                        ));
                     }
                 }
             }

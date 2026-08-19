@@ -31,6 +31,18 @@ pub struct AppConfig {
     #[serde(default)]
     pub hooks: Vec<Hook>,
     pub docker_host: Option<String>,
+    /// Docker CLI context to use when no `--context` or `DOCKER_CONTEXT` is set.
+    pub docker_context: Option<String>,
+    /// Verify a TCP daemon with the certificates under `docker_cert_path`.
+    #[serde(default)]
+    pub docker_tls_verify: bool,
+    /// Directory containing `ca.pem`, `cert.pem`, and `key.pem`.
+    pub docker_cert_path: Option<PathBuf>,
+    /// Optional private key used for `ssh://` Docker endpoints.
+    pub docker_ssh_key_path: Option<String>,
+    /// Compose profiles enabled for effective config and project actions.
+    #[serde(default)]
+    pub compose_profiles: Vec<String>,
     /// Theme name. Known values: `"ember"` (default) and `"classic"`.
     #[serde(default = "default_theme")]
     pub theme: String,
@@ -67,6 +79,11 @@ impl Default for AppConfig {
             memory_alert_threshold: 90.0,
             hooks: vec![],
             docker_host: None,
+            docker_context: None,
+            docker_tls_verify: false,
+            docker_cert_path: None,
+            docker_ssh_key_path: None,
+            compose_profiles: vec![],
             theme: default_theme(),
             check_updates: true,
         }

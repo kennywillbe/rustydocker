@@ -46,4 +46,12 @@ fn help_flag_prints_usage() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Usage"), "help missing Usage: {:?}", stdout);
+    assert!(
+        stdout.contains("--context"),
+        "help missing Docker context option: {stdout:?}"
+    );
+    assert!(
+        stdout.contains("--profile"),
+        "help missing Compose profile option: {stdout:?}"
+    );
 }

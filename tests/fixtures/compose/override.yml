@@ -1,0 +1,11 @@
+services:
+  api:
+    image: alpine:3.21
+    build:
+      context: .
+  worker:
+    image: alpine:3.21
+    command: ["sleep", "infinity"]
+    profiles: ["debug"]
+    depends_on:
+      - api

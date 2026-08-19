@@ -2,7 +2,7 @@
 name = "rustydocker"
 version = "0.4.3"
 edition = "2021"
-rust-version = "1.75"
+rust-version = "1.88"
 description = "A fast, compose-first Docker TUI written in Rust"
 license = "MIT"
 repository = "https://github.com/kennywillbe/rustydocker"
@@ -13,7 +13,7 @@ categories = ["command-line-utilities"]
 exclude = [".github/", "docs/", "assets/"]
 
 [dependencies]
-bollard = "0.18"
+bollard = { version = "0.21.1", features = ["ssl", "ssh"] }
 tokio = { version = "1", features = ["full"] }
 ratatui = "0.30"
 crossterm = "0.28"

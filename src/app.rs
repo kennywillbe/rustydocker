@@ -1,5 +1,6 @@
 use crate::config::AppConfig;
 use crate::docker::compose::ComposeProject;
+use crate::docker::model::container_state;
 use bollard::models::{ContainerSummary, ImageSummary, Network, Volume};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use fuzzy_matcher::skim::SkimMatcherV2;
@@ -90,6 +91,7 @@ pub enum InputMode {
     Normal,
     Search,
     Filter,
+    PullImage,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -141,10 +143,14 @@ pub struct App {
     pub selected_index: usize,
     pub containers: Vec<ContainerSummary>,
     pub images: Vec<ImageSummary>,
+    pub image_inspect: Option<bollard::models::ImageInspect>,
+    pub image_history: Vec<bollard::models::ImageHistoryResponseItem>,
+    pub image_pull_input: String,
     pub volumes: Vec<Volume>,
     pub networks: Vec<Network>,
     pub projects: Vec<ComposeProject>,
     pub logs: HashMap<String, Vec<String>>,
+    pub all_logs: VecDeque<CombinedLog>,
     pub stats: HashMap<String, StatsHistory>,
     pub log_search: Option<String>,
     pub sidebar_filter: Option<String>,
@@ -179,6 +185,13 @@ pub struct App {
     pub check_updates: bool,
     pub update_available: Option<UpdateInfo>,
     pub update_flow: UpdateFlow,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CombinedLog {
+    pub container_id: String,
+    pub container_name: String,
+    pub line: String,
 }
 
 /// Information about an available update, populated by the background
@@ -216,10 +229,14 @@ impl App {
             selected_index: 0,
             containers: vec![],
             images: vec![],
+            image_inspect: None,
+            image_history: vec![],
+            image_pull_input: String::new(),
             volumes: vec![],
             networks: vec![],
             projects: vec![],
             logs: HashMap::new(),
+            all_logs: VecDeque::new(),
             stats: HashMap::new(),
             log_search: None,
             sidebar_filter: None,
@@ -254,6 +271,22 @@ impl App {
             check_updates: config.check_updates,
             update_available: None,
             update_flow: UpdateFlow::default(),
+        }
+    }
+
+    pub fn push_log(&mut self, container_id: String, container_name: String, line: String) {
+        let entry = self.logs.entry(container_id.clone()).or_default();
+        entry.push(line.clone());
+        if entry.len() > 1_000 {
+            entry.drain(..entry.len() - 1_000);
+        }
+        self.all_logs.push_back(CombinedLog {
+            container_id,
+            container_name,
+            line,
+        });
+        while self.all_logs.len() > 5_000 {
+            self.all_logs.pop_front();
         }
     }
 
@@ -302,6 +335,15 @@ impl App {
         self.selected_container().and_then(|c| c.id.as_deref())
     }
 
+    pub fn selected_image_reference(&self) -> Option<&str> {
+        if self.sidebar_section != SidebarSection::Images {
+            return None;
+        }
+        self.images
+            .get(self.selected_index)
+            .map(|image| image.repo_tags.first().map(String::as_str).unwrap_or(image.id.as_str()))
+    }
+
     pub fn target_container_ids(&self) -> Vec<String> {
         if !self.selected_containers.is_empty() {
             self.selected_containers.iter().cloned().collect()
@@ -326,8 +368,8 @@ impl App {
                 };
             }
             // Then by state
-            let state_order = |s: &Option<String>| -> u8 {
-                match s.as_deref() {
+            let state_order = |container: &ContainerSummary| -> u8 {
+                match container_state(container) {
                     Some("running") => 0,
                     Some("restarting") => 1,
                     Some("paused") => 2,
@@ -336,7 +378,7 @@ impl App {
                     _ => 5,
                 }
             };
-            let ord = state_order(&a.state).cmp(&state_order(&b.state));
+            let ord = state_order(a).cmp(&state_order(b));
             if ord != std::cmp::Ordering::Equal {
                 return ord;
             }
@@ -411,6 +453,25 @@ impl App {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> AppAction {
+        if self.input_mode == InputMode::PullImage {
+            match key.code {
+                KeyCode::Esc => {
+                    self.input_mode = InputMode::Normal;
+                    self.image_pull_input.clear();
+                }
+                KeyCode::Enter if !self.image_pull_input.trim().is_empty() => {
+                    self.input_mode = InputMode::Normal;
+                    return AppAction::PullImage(self.image_pull_input.trim().to_string());
+                }
+                KeyCode::Backspace => {
+                    self.image_pull_input.pop();
+                }
+                KeyCode::Char(c) => self.image_pull_input.push(c),
+                _ => {}
+            }
+            return AppAction::None;
+        }
+
         // Search mode intercepts all input except Ctrl+C
         if self.input_mode == InputMode::Search {
             if let KeyCode::Char('c') = key.code {
@@ -638,6 +699,26 @@ impl App {
             KeyCode::Char('4') => self.active_tab = Tab::Env,
             KeyCode::Char('5') => self.active_tab = Tab::Top,
             KeyCode::Char('6') => self.active_tab = Tab::Graph,
+            // Section-specific image and Compose actions
+            KeyCode::Char('P') if self.sidebar_section == SidebarSection::Images => {
+                self.image_pull_input.clear();
+                self.input_mode = InputMode::PullImage;
+            }
+            KeyCode::Char('d') if self.sidebar_section == SidebarSection::Images => {
+                self.pending_confirm = Some(PendingConfirm {
+                    message: "Remove this image? (y/n)".to_string(),
+                    action: AppAction::RemoveImage,
+                });
+            }
+            KeyCode::Char('B') if self.sidebar_section == SidebarSection::Services => {
+                return AppAction::ComposeRebuild;
+            }
+            KeyCode::Char('P') if self.sidebar_section == SidebarSection::Services => {
+                return AppAction::ComposePull;
+            }
+            KeyCode::Char('W') if self.sidebar_section == SidebarSection::Services => {
+                return AppAction::ComposeWatchToggle;
+            }
             // Container actions
             KeyCode::Char('r') => return AppAction::RestartContainer,
             KeyCode::Char('s') => return AppAction::StopContainer,
@@ -651,7 +732,7 @@ impl App {
             }
             KeyCode::Char('p') => {
                 if let Some(container) = self.selected_container() {
-                    match container.state.as_deref() {
+                    match container_state(container) {
                         Some("paused") => return AppAction::UnpauseContainer,
                         Some("running") => return AppAction::PauseContainer,
                         _ => {}
@@ -1048,6 +1129,11 @@ pub enum AppAction {
     RemoveStoppedContainers,
     PruneContainers,
     PruneNetworks,
+    PullImage(String),
+    RemoveImage,
+    ComposePull,
+    ComposeRebuild,
+    ComposeWatchToggle,
     ExportLogs,
     RunCustomCommand(usize),
     // Update flow
@@ -1077,7 +1163,7 @@ mod tests {
         ContainerSummary {
             id: Some(id.to_string()),
             names: Some(vec![format!("/{}", id)]),
-            state: Some(state.to_string()),
+            state: Some(state.parse().expect("valid container state")),
             ..Default::default()
         }
     }

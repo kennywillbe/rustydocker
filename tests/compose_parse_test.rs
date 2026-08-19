@@ -1,4 +1,4 @@
-use rustydocker::docker::compose::parse_compose;
+use rustydocker::docker::compose::{parse_compose, parse_effective_json};
 
 #[test]
 fn test_parse_simple_compose() {
@@ -65,4 +65,26 @@ services: {}
 "#;
     let project = parse_compose(yaml, "empty").unwrap();
     assert_eq!(project.services.len(), 0);
+}
+
+#[test]
+fn test_parse_effective_config_metadata() {
+    let json = br#"{
+      "name": "demo",
+      "services": {
+        "api": {
+          "image": "demo/api:latest",
+          "build": {"context": "."},
+          "profiles": ["debug"],
+          "depends_on": {"db": {"condition": "service_started"}}
+        },
+        "db": {"image": "postgres:17"}
+      }
+    }"#;
+    let project = parse_effective_json(json).unwrap();
+    assert_eq!(project.name, "demo");
+    let api = project.services.iter().find(|service| service.name == "api").unwrap();
+    assert!(api.has_build);
+    assert_eq!(api.profiles, ["debug"]);
+    assert_eq!(api.depends_on, ["db"]);
 }

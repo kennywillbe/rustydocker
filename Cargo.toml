@@ -16,7 +16,7 @@ exclude = [".github/", "docs/", "assets/"]
 bollard = { version = "0.21.1", features = ["ssl", "ssh"] }
 tokio = { version = "1", features = ["full"] }
 ratatui = "0.30"
-crossterm = "0.28"
+crossterm = "0.29"
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 anyhow = "1"
@@ -24,7 +24,7 @@ futures-util = "0.3"
 chrono = "0.4"
 unicode-width = "0.2"
 toml = "1.1"
-dirs = "5"
+dirs = "6"
 clap = { version = "4", features = ["derive"] }
 regex = "1"
 fuzzy-matcher = "0.3"

@@ -36,7 +36,6 @@ jobs:
         id: release
         continue-on-error: true
         with:
-          release-type: rust
           token: ${{ steps.release-token.outputs.token }}
 
       - name: Retry release-please on failure
@@ -44,7 +43,6 @@ jobs:
         uses: googleapis/release-please-action@v5
         id: release_retry
         with:
-          release-type: rust
           token: ${{ steps.release-token.outputs.token }}
 
   build:

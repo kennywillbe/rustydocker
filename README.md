@@ -6,6 +6,12 @@ A fast, compose-first Docker TUI written in Rust. A modern alternative to lazydo
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.88+-orange)](https://www.rust-lang.org/)
 
+![rustydocker](docs/demo.gif)
+
+Streaming logs with a regex search over them, live stats, the container's
+environment, and the `depends_on` graph — one Compose project, no `docker`
+subcommands.
+
 ![rustydocker — the ember theme](docs/screenshot.png)
 
 The default `ember` theme ships with a warm amber-on-black palette. Set

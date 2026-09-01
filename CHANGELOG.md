@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.5.1](https://github.com/kennywillbe/rustydocker/compare/v0.5.0...v0.5.1) (2026-09-01)
+
+
+### Build System
+
+* **deps:** bump clap from 4.6.1 to 4.6.6 ([#57](https://github.com/kennywillbe/rustydocker/issues/57)) ([b0ab5f5](https://github.com/kennywillbe/rustydocker/commit/b0ab5f565f600735794e39f863456415ddd9e492))
+* **deps:** bump futures-util from 0.3.32 to 0.3.34 ([#59](https://github.com/kennywillbe/rustydocker/issues/59)) ([dcc2217](https://github.com/kennywillbe/rustydocker/commit/dcc2217e4cbe87747c6564e41cef63bde878632d))
+* **deps:** bump tokio from 1.52.1 to 1.53.1 ([#56](https://github.com/kennywillbe/rustydocker/issues/56)) ([cdb14d2](https://github.com/kennywillbe/rustydocker/commit/cdb14d2f7fa88533e7f3aa54ef9662df35b4d573))
+* **deps:** bump toml from 0.8.23 to 1.1.4+spec-1.1.0 ([#55](https://github.com/kennywillbe/rustydocker/issues/55)) ([e883652](https://github.com/kennywillbe/rustydocker/commit/e88365253244df73e8fa8bcfbaa22d26fe992335))
+* **deps:** bump unicode-width from 0.2.0 to 0.2.2 ([#58](https://github.com/kennywillbe/rustydocker/issues/58)) ([ed8540f](https://github.com/kennywillbe/rustydocker/commit/ed8540fbc408429f2534aa466f3710530cd67756))
+
 ## [0.5.0](https://github.com/kennywillbe/rustydocker/compare/v0.4.3...v0.5.0) (2026-08-19)
 
 

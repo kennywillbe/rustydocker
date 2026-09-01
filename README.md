@@ -12,8 +12,6 @@ Streaming logs with a regex search over them, live stats, the container's
 environment, and the `depends_on` graph — one Compose project, no `docker`
 subcommands.
 
-![rustydocker — the ember theme](docs/screenshot.png)
-
 The default `ember` theme ships with a warm amber-on-black palette. Set
 `theme = "classic"` in `~/.config/rustydocker/config.toml` to switch back
 to the original cyan/green look.

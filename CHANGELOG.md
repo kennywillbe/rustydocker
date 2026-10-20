@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.2](https://github.com/kennywillbe/rustydocker/compare/v0.5.1...v0.5.2) (2026-10-20)
+
+
+### Dependencies
+
+* bump the cargo-deps group across 1 directory with 2 updates ([#61](https://github.com/kennywillbe/rustydocker/issues/61)) ([57c7f2f](https://github.com/kennywillbe/rustydocker/commit/57c7f2f6348c1c00c88c8b3784d9c7d4f928a230))
+* bump the cargo-deps group with 3 updates ([#70](https://github.com/kennywillbe/rustydocker/issues/70)) ([ca7850a](https://github.com/kennywillbe/rustydocker/commit/ca7850afd9e667f01dde24bbd7dc07c90f6d6c09))
+
 ## [0.5.1](https://github.com/kennywillbe/rustydocker/compare/v0.5.0...v0.5.1) (2026-09-01)
 
 

@@ -2,6 +2,7 @@ use futures_util::StreamExt;
 use rustydocker::config::AppConfig;
 use rustydocker::docker::client::DockerClient;
 use rustydocker::docker::connection;
+use rustydocker::runtime::stats::StatsManager;
 use std::process::Command;
 use std::time::Duration;
 
@@ -9,7 +10,9 @@ struct ContainerCleanup(String);
 
 impl Drop for ContainerCleanup {
     fn drop(&mut self) {
-        let _ = Command::new("docker").args(["rm", "-f", &self.0]).output();
+        // -v: images that declare a VOLUME (postgres) leave an anonymous
+        // volume behind on every run otherwise.
+        let _ = Command::new("docker").args(["rm", "-f", "-v", &self.0]).output();
     }
 }
 
@@ -85,4 +88,63 @@ async fn live_image_and_log_workflows() {
     if !image_existed {
         docker.remove_image(image, false).await.unwrap();
     }
+}
+
+#[tokio::test]
+#[ignore = "requires a running Docker daemon with the postgres:16-alpine image"]
+async fn live_stats_stream_reports_busy_container_cpu() {
+    let resolved = connection::resolve(None, &AppConfig::default()).unwrap();
+    let docker = DockerClient::new(&resolved.spec).unwrap();
+    let name = format!("rd-test-stats-{}", std::process::id());
+    let _cleanup = ContainerCleanup(name.clone());
+    let output = Command::new("docker")
+        .args([
+            "run",
+            "-d",
+            "--name",
+            &name,
+            "postgres:16-alpine",
+            "sh",
+            "-c",
+            "while :; do :; done",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "docker run failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let container = docker
+        .list_containers()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|container| {
+            container
+                .names
+                .as_ref()
+                .is_some_and(|names| names.iter().any(|candidate| candidate == &format!("/{name}")))
+        })
+        .unwrap();
+    let id = container.id.clone().unwrap();
+
+    let mut manager = StatsManager::default();
+    manager.sync(&docker, std::slice::from_ref(&container));
+    let sample = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let event = manager.recv().await.expect("stats channel stays open");
+            if event.container_id == id {
+                return event.sample;
+            }
+        }
+    })
+    .await
+    .expect("a CPU sample within 10 s");
+    assert!(
+        (80.0..=120.0).contains(&sample.cpu_percent),
+        "one busy core should read ~100%, got {}",
+        sample.cpu_percent
+    );
 }

@@ -104,7 +104,6 @@ impl DockerClient {
         Box::pin(self.docker.logs(id, Some(opts)))
     }
 
-    #[allow(dead_code)]
     pub fn container_stats(
         &self,
         id: &str,
@@ -279,20 +278,6 @@ impl DockerClient {
     pub async fn prune_networks(&self) -> Result<()> {
         self.docker.prune_networks(None::<PruneNetworksOptions>).await?;
         Ok(())
-    }
-
-    /// Fetch a single stats snapshot for a container (non-streaming).
-    pub async fn container_stats_oneshot(&self, id: &str) -> Result<ContainerStatsResponse> {
-        let opts = StatsOptions {
-            stream: false,
-            one_shot: true,
-        };
-        let mut stream = self.docker.stats(id, Some(opts));
-        stream
-            .next()
-            .await
-            .ok_or_else(|| anyhow::anyhow!("No stats response"))?
-            .map_err(|e| e.into())
     }
 
     /// Get Docker system information. Used for future features.

@@ -319,6 +319,9 @@ fn test_stats_history_push_and_cap() {
     // First element should be 5.0 (0..4 were removed)
     assert_eq!(h.cpu[0], 5.0);
     assert_eq!(h.cpu[59], 64.0);
+    // NET arrives as a per-second rate and must be stored as is.
+    assert_eq!(h.net_rx[59], 64.0);
+    assert_eq!(h.net_tx[59], 64.0);
 }
 
 #[test]
@@ -579,4 +582,67 @@ fn test_confirm_esc_cancels() {
     let action = app.handle_key(key(KeyCode::Esc));
     assert_eq!(action, AppAction::None);
     assert!(app.pending_confirm.is_none());
+}
+
+fn busy_sample() -> rustydocker::docker::stats::StatsSample {
+    rustydocker::docker::stats::StatsSample {
+        cpu_percent: 100.0,
+        memory_mb: 5.0,
+        memory_limit_mb: 1024.0,
+        net_rx_per_sec: 0.0,
+        net_tx_per_sec: 0.0,
+    }
+}
+
+#[test]
+fn test_prune_stopped_stats_clears_history_and_alert() {
+    let mut app = App::new(AppConfig::default());
+    app.containers = vec![
+        create_container_with_state("busy", "running"),
+        create_container_with_state("halted", "running"),
+        create_container_with_state("frozen", "running"),
+    ];
+    for id in ["busy", "halted", "frozen"] {
+        app.push_stats(id.to_string(), busy_sample());
+    }
+    assert!(app.container_has_alert("halted"));
+
+    app.containers = vec![
+        create_container_with_state("busy", "running"),
+        create_container_with_state("halted", "exited"),
+        create_container_with_state("frozen", "paused"),
+    ];
+    app.prune_stopped_stats();
+
+    assert!(app.stats.contains_key("busy"));
+    assert!(!app.stats.contains_key("halted"));
+    assert!(!app.stats.contains_key("frozen"));
+    assert!(!app.container_has_alert("halted"));
+}
+
+#[test]
+fn test_push_stats_ignores_containers_that_are_not_running() {
+    let mut app = App::new(AppConfig::default());
+    app.containers = vec![create_container_with_state("halted", "exited")];
+
+    app.push_stats("halted".to_string(), busy_sample());
+    app.push_stats("unknown".to_string(), busy_sample());
+
+    assert!(app.stats.is_empty());
+}
+
+#[test]
+fn test_clear_stats_forgets_one_container() {
+    let mut app = App::new(AppConfig::default());
+    app.containers = vec![
+        create_container_with_state("restarted", "running"),
+        create_container_with_state("other", "running"),
+    ];
+    app.push_stats("restarted".to_string(), busy_sample());
+    app.push_stats("other".to_string(), busy_sample());
+
+    app.clear_stats("restarted");
+
+    assert!(!app.stats.contains_key("restarted"));
+    assert!(app.stats.contains_key("other"));
 }

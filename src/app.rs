@@ -1,6 +1,7 @@
 use crate::config::AppConfig;
 use crate::docker::compose::ComposeProject;
 use crate::docker::model::container_state;
+use crate::docker::stats::StatsSample;
 use bollard::models::{ContainerSummary, ImageSummary, Network, Volume};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use fuzzy_matcher::skim::SkimMatcherV2;
@@ -101,31 +102,17 @@ pub struct StatsHistory {
     pub memory_limit_mb: f64,
     pub net_rx: VecDeque<f64>,
     pub net_tx: VecDeque<f64>,
-    prev_net_rx: f64,
-    prev_net_tx: f64,
 }
 
 impl StatsHistory {
-    pub fn push(&mut self, cpu: f64, mem: f64, mem_limit: f64, rx_cumulative: f64, tx_cumulative: f64) {
+    pub fn push(&mut self, cpu: f64, mem: f64, mem_limit: f64, rx_per_sec: f64, tx_per_sec: f64) {
+        // Docker streams one frame per second, so this keeps about a minute.
         const MAX_POINTS: usize = 60;
         self.cpu.push_back(cpu);
         self.memory.push_back(mem);
         self.memory_limit_mb = mem_limit;
-        // Calculate delta (bytes/s) from cumulative values
-        let rx_delta = if self.prev_net_rx > 0.0 {
-            (rx_cumulative - self.prev_net_rx).max(0.0)
-        } else {
-            0.0
-        };
-        let tx_delta = if self.prev_net_tx > 0.0 {
-            (tx_cumulative - self.prev_net_tx).max(0.0)
-        } else {
-            0.0
-        };
-        self.prev_net_rx = rx_cumulative;
-        self.prev_net_tx = tx_cumulative;
-        self.net_rx.push_back(rx_delta);
-        self.net_tx.push_back(tx_delta);
+        self.net_rx.push_back(rx_per_sec);
+        self.net_tx.push_back(tx_per_sec);
         while self.cpu.len() > MAX_POINTS {
             self.cpu.pop_front();
             self.memory.pop_front();
@@ -401,6 +388,43 @@ impl App {
     pub fn prune_stale_selections(&mut self) {
         let live_ids: HashSet<String> = self.containers.iter().filter_map(|c| c.id.clone()).collect();
         self.selected_containers.retain(|id| live_ids.contains(id));
+    }
+
+    /// Records a sample only while its container is running: a frame queued
+    /// just before a stop must not bring back the history that was cleared.
+    pub fn push_stats(&mut self, container_id: String, sample: StatsSample) {
+        if !self.is_running(&container_id) {
+            return;
+        }
+        self.stats.entry(container_id).or_default().push(
+            sample.cpu_percent,
+            sample.memory_mb,
+            sample.memory_limit_mb,
+            sample.net_rx_per_sec,
+            sample.net_tx_per_sec,
+        );
+    }
+
+    pub fn clear_stats(&mut self, container_id: &str) {
+        self.stats.remove(container_id);
+    }
+
+    /// Drops the history of containers that are no longer running, so a
+    /// stopped container does not keep showing its last load and alert.
+    pub fn prune_stopped_stats(&mut self) {
+        let running: HashSet<String> = self
+            .containers
+            .iter()
+            .filter(|container| container_state(container) == Some("running"))
+            .filter_map(|container| container.id.clone())
+            .collect();
+        self.stats.retain(|id, _| running.contains(id));
+    }
+
+    fn is_running(&self, container_id: &str) -> bool {
+        self.containers.iter().any(|container| {
+            container.id.as_deref() == Some(container_id) && container_state(container) == Some("running")
+        })
     }
 
     pub fn clamp_selected_index(&mut self) {

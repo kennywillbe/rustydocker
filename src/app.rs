@@ -427,6 +427,18 @@ impl App {
         })
     }
 
+    /// Replaces the list and keeps the selection on a row that exists; a prune
+    /// or a removal elsewhere can shrink it under the cursor.
+    pub fn set_networks(&mut self, networks: Vec<Network>) {
+        self.networks = networks;
+        self.clamp_selected_index();
+    }
+
+    pub fn set_volumes(&mut self, volumes: Vec<Volume>) {
+        self.volumes = volumes;
+        self.clamp_selected_index();
+    }
+
     pub fn clamp_selected_index(&mut self) {
         let len = self.current_list_len();
         if len == 0 {

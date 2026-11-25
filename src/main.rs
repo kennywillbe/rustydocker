@@ -153,8 +153,8 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, cli: Cli
     app.containers = docker.list_containers().await.unwrap_or_default();
     app.sort_containers();
     app.images = docker.list_images().await.unwrap_or_default();
-    app.volumes = docker.list_volumes().await.unwrap_or_default();
-    app.networks = docker.list_networks().await.unwrap_or_default();
+    app.set_volumes(docker.list_volumes().await.unwrap_or_default());
+    app.set_networks(docker.list_networks().await.unwrap_or_default());
 
     let mut log_manager = LogManager::default();
     log_manager.sync(&docker, &app.containers, &app.log_tail_lines);
@@ -246,7 +246,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, cli: Cli
                                     Ok(_) => app.set_status("Volumes pruned"),
                                     Err(e) => app.set_status(&format!("Error: {}", e)),
                                 }
-                                app.volumes = docker.list_volumes().await.unwrap_or_default();
+                                app.set_volumes(docker.list_volumes().await.unwrap_or_default());
                             }
                             AppAction::PullImage(reference) => {
                                 app.set_status(&format!("Pulling {reference}..."));
@@ -325,7 +325,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, cli: Cli
                                     Ok(_) => app.set_status("Networks pruned"),
                                     Err(e) => app.set_status(&format!("Error: {}", e)),
                                 }
-                                app.networks = docker.list_networks().await.unwrap_or_default();
+                                app.set_networks(docker.list_networks().await.unwrap_or_default());
                             }
                             AppAction::ExportLogs => {
                                 if let Some(id) = app.selected_container_id().map(|s| s.to_string()) {
@@ -492,7 +492,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, cli: Cli
                             app.sort_containers();
                             app.clamp_selected_index();
                             app.prune_stale_selections();
-                            app.networks = docker.list_networks().await.unwrap_or_default();
+                            app.set_networks(docker.list_networks().await.unwrap_or_default());
                             log_manager.sync(&docker, &app.containers, &app.log_tail_lines);
                             // A failed list is not "everything stopped"; keep the graphs.
                             if listed_ok {
@@ -585,10 +585,10 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, cli: Cli
                             }
                         }
                         Some(EventMessageTypeEnum::VOLUME) => {
-                            app.volumes = docker.list_volumes().await.unwrap_or_default();
+                            app.set_volumes(docker.list_volumes().await.unwrap_or_default());
                         }
                         Some(EventMessageTypeEnum::NETWORK) => {
-                            app.networks = docker.list_networks().await.unwrap_or_default();
+                            app.set_networks(docker.list_networks().await.unwrap_or_default());
                         }
                         _ => {}
                     }

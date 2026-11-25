@@ -646,3 +646,40 @@ fn test_clear_stats_forgets_one_container() {
     assert!(!app.stats.contains_key("restarted"));
     assert!(app.stats.contains_key("other"));
 }
+
+#[test]
+fn test_shrinking_network_list_keeps_selection_in_range() {
+    let network = |name: &str| bollard::models::Network {
+        name: Some(name.to_string()),
+        ..Default::default()
+    };
+    let mut app = App::new(AppConfig::default());
+    app.sidebar_section = SidebarSection::Networks;
+    app.set_networks(vec![
+        network("bridge"),
+        network("demo"),
+        network("host"),
+        network("none"),
+    ]);
+    app.selected_index = 3;
+
+    app.set_networks(vec![network("bridge"), network("host")]);
+
+    assert_eq!(app.selected_index, 1);
+}
+
+#[test]
+fn test_shrinking_volume_list_keeps_selection_in_range() {
+    let volume = |name: &str| bollard::models::Volume {
+        name: name.to_string(),
+        ..Default::default()
+    };
+    let mut app = App::new(AppConfig::default());
+    app.sidebar_section = SidebarSection::Volumes;
+    app.set_volumes(vec![volume("a"), volume("b"), volume("c")]);
+    app.selected_index = 2;
+
+    app.set_volumes(vec![]);
+
+    assert_eq!(app.selected_index, 0);
+}

@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.5.4](https://github.com/kennywillbe/rustydocker/compare/v0.5.3...v0.5.4) (2026-11-25)
+
+
+### Bug Fixes
+
+* keep sidebar networks and volumes in a stable order ([#74](https://github.com/kennywillbe/rustydocker/issues/74)) ([c1d120f](https://github.com/kennywillbe/rustydocker/commit/c1d120f1ccb81c4bea5a728fff7ebae05b081db9)), closes [#67](https://github.com/kennywillbe/rustydocker/issues/67)
+* keep the sidebar selection in range after network or volume refresh ([#78](https://github.com/kennywillbe/rustydocker/issues/78)) ([36d67e7](https://github.com/kennywillbe/rustydocker/commit/36d67e7297ad01809aee8b3c8b7c9da5d5b98c75))
+* show sub-second uptime as &lt;1s in the sidebar ([#77](https://github.com/kennywillbe/rustydocker/issues/77)) ([ada05ae](https://github.com/kennywillbe/rustydocker/commit/ada05ae7cbd159c6beb6af65bfae7d7e87d7480d))
+* stream container stats so CPU and NET show real rates ([#73](https://github.com/kennywillbe/rustydocker/issues/73)) ([9bcbbc6](https://github.com/kennywillbe/rustydocker/commit/9bcbbc6b725f6ee95c25ffb4fb18935e5c26d2e9)), closes [#66](https://github.com/kennywillbe/rustydocker/issues/66)
+
+
+### Performance Improvements
+
+* stop redrawing the whole TUI for every stats sample ([#79](https://github.com/kennywillbe/rustydocker/issues/79)) ([d6f39a2](https://github.com/kennywillbe/rustydocker/commit/d6f39a221fd6baf56cd203b0a63a5069b4704362))
+
+
+### Dependencies
+
+* bump rustls to 0.23.46 ([#76](https://github.com/kennywillbe/rustydocker/issues/76)) ([c750d14](https://github.com/kennywillbe/rustydocker/commit/c750d140828439f281ce5e863a4003dab0987a39))
+
 ## [0.5.3](https://github.com/kennywillbe/rustydocker/compare/v0.5.2...v0.5.3) (2026-11-20)
 
 

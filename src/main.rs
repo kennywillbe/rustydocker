@@ -15,12 +15,12 @@ use rustydocker::docker::compose::{
 };
 use rustydocker::docker::connection;
 use rustydocker::docker::model::container_state;
-use rustydocker::docker::stats::parse_stats;
 use rustydocker::event::{AppEvent, EventHandler};
 use rustydocker::runtime::actions::ActionExecutor;
 use rustydocker::runtime::details::refresh_selected;
 use rustydocker::runtime::images::refresh_selected_image;
 use rustydocker::runtime::logs::{LogEvent, LogManager};
+use rustydocker::runtime::stats::{resets_stats, StatsEvent, StatsManager};
 use rustydocker::{ui, update};
 use std::io;
 use std::path::Path;
@@ -158,27 +158,11 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, cli: Cli
 
     let mut log_manager = LogManager::default();
     log_manager.sync(&docker, &app.containers, &app.log_tail_lines);
+    let mut stats_manager = StatsManager::default();
+    stats_manager.sync(&docker, &app.containers);
+    app.prune_stopped_stats();
     refresh_selected(&mut app, &docker, false).await;
     let mut action_executor = ActionExecutor::new(compose_invocation.clone());
-
-    // Fetch initial stats for all running containers
-    for container in &app.containers {
-        if container_state(container) == Some("running") {
-            if let Some(id) = container.id.as_deref() {
-                if let Ok(stats) = docker.container_stats_oneshot(id).await {
-                    let snapshot = parse_stats(&stats);
-                    let history = app.stats.entry(id.to_string()).or_default();
-                    history.push(
-                        snapshot.cpu_percent,
-                        snapshot.memory_mb,
-                        snapshot.memory_limit_mb,
-                        snapshot.net_rx_bytes,
-                        snapshot.net_tx_bytes,
-                    );
-                }
-            }
-        }
-    }
 
     let mut docker_event_stream = Box::pin(docker.docker_events());
 
@@ -502,37 +486,29 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, cli: Cli
                         }
                         if tick_count.is_multiple_of(40) {
                             let prev_id = app.selected_container_id().map(|s| s.to_string());
-                            app.containers = docker.list_containers().await.unwrap_or_default();
+                            let listed = docker.list_containers().await;
+                            let listed_ok = listed.is_ok();
+                            app.containers = listed.unwrap_or_default();
                             app.sort_containers();
                             app.clamp_selected_index();
                             app.prune_stale_selections();
                             app.networks = docker.list_networks().await.unwrap_or_default();
                             log_manager.sync(&docker, &app.containers, &app.log_tail_lines);
+                            // A failed list is not "everything stopped"; keep the graphs.
+                            if listed_ok {
+                                stats_manager.sync(&docker, &app.containers);
+                                app.prune_stopped_stats();
+                            }
                             // If selected container changed after refresh, update details.
                             let new_id = app.selected_container_id().map(|s| s.to_string());
                             if new_id != prev_id {
                                 refresh_selected(&mut app, &docker, true).await;
                             }
                         }
-                        if tick_count.is_multiple_of(8) {
-                            // Collect stats for all running containers
-                            for container in &app.containers {
-                                if container_state(container) == Some("running") {
-                                    if let Some(id) = container.id.as_deref() {
-                                        if let Ok(stats) = docker.container_stats_oneshot(id).await {
-                                            let snapshot = parse_stats(&stats);
-                                            let history = app.stats.entry(id.to_string()).or_default();
-                                            history.push(snapshot.cpu_percent, snapshot.memory_mb, snapshot.memory_limit_mb, snapshot.net_rx_bytes, snapshot.net_tx_bytes);
-                                        }
-                                    }
-                                }
-                            }
-                            // Also refresh top data for selected container
-                            if app.active_tab == app::Tab::Top {
-                                if let Some(id) = app.selected_container_id().map(|s| s.to_string()) {
-                                    if let Ok(top) = docker.container_top(&id).await {
-                                        app.container_top = Some(top);
-                                    }
+                        if tick_count.is_multiple_of(8) && app.active_tab == app::Tab::Top {
+                            if let Some(id) = app.selected_container_id().map(|s| s.to_string()) {
+                                if let Ok(top) = docker.container_top(&id).await {
+                                    app.container_top = Some(top);
                                 }
                             }
                         }
@@ -583,11 +559,23 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, cli: Cli
 
                     match event.typ {
                         Some(EventMessageTypeEnum::CONTAINER) => {
-                            app.containers = docker.list_containers().await.unwrap_or_default();
+                            // Before the re-list: a restart can finish before it runs,
+                            // so the list would never show the container as stopped.
+                            if resets_stats(event_action) && !actor_id.is_empty() {
+                                stats_manager.forget(actor_id);
+                                app.clear_stats(actor_id);
+                            }
+                            let listed = docker.list_containers().await;
+                            let listed_ok = listed.is_ok();
+                            app.containers = listed.unwrap_or_default();
                             app.sort_containers();
                             app.clamp_selected_index();
                             app.prune_stale_selections();
                             log_manager.sync(&docker, &app.containers, &app.log_tail_lines);
+                            if listed_ok {
+                                stats_manager.sync(&docker, &app.containers);
+                                app.prune_stopped_stats();
+                            }
                         }
                         Some(EventMessageTypeEnum::IMAGE) => {
                             app.images = docker.list_images().await.unwrap_or_default();
@@ -616,6 +604,9 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, cli: Cli
                         app.set_status(&format!("Log stream {short_id}: {message}"));
                     }
                 }
+            }
+            Some(StatsEvent { container_id, sample }) = stats_manager.recv() => {
+                app.push_stats(container_id, sample);
             }
             Some(outcome) = action_executor.recv() => {
                 match outcome {

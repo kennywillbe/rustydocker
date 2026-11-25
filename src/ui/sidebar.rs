@@ -30,7 +30,9 @@ fn shorten_status(status: &str) -> String {
     } else {
         return status.to_string();
     };
+    // Before the unit replacements below, which would turn "a second" into "as".
     let short = body
+        .replace("Less than a second", "<1s")
         .replace("About an hour", "1h")
         .replace("About a minute", "1m")
         .replace(" minutes", "m")
@@ -342,4 +344,22 @@ fn render_networks_section(f: &mut Frame, area: Rect, app: &App) {
         None
     };
     render_scrollable_lines(f, content_area, lines, selected, t);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::shorten_status;
+
+    #[test]
+    fn sub_second_status_reads_as_under_one_second() {
+        assert_eq!(shorten_status("Up Less than a second"), "up <1s");
+        assert_eq!(shorten_status("Exited (130) Less than a second ago"), "(130) <1s");
+    }
+
+    #[test]
+    fn longer_statuses_keep_their_short_units() {
+        assert_eq!(shorten_status("Up 5 minutes"), "up 5m");
+        assert_eq!(shorten_status("Up About an hour"), "up 1h");
+        assert_eq!(shorten_status("Exited (0) 3 seconds ago"), "(0) 3s");
+    }
 }

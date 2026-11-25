@@ -7,6 +7,8 @@ use tokio::sync::mpsc;
 pub enum AppEvent {
     Key(KeyEvent),
     Mouse(MouseEvent),
+    // Carries no data: the next draw picks up the new size by itself.
+    Resize,
     Tick,
 }
 
@@ -26,6 +28,7 @@ impl EventHandler {
                     match event::read() {
                         Ok(CrosstermEvent::Key(key)) if tx_clone.send(AppEvent::Key(key)).is_err() => break,
                         Ok(CrosstermEvent::Mouse(mouse)) if tx_clone.send(AppEvent::Mouse(mouse)).is_err() => break,
+                        Ok(CrosstermEvent::Resize(..)) if tx_clone.send(AppEvent::Resize).is_err() => break,
                         _ => {}
                     }
                 } else {

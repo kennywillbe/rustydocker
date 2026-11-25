@@ -168,8 +168,15 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, cli: Cli
 
     let mut tick_count: u64 = 0;
 
+    // Stats arrive once a second for every running container. A full redraw
+    // for each one made idle CPU grow with the container count, so they are
+    // shown with the next tick, key, mouse or resize event instead.
+    let mut redraw = true;
     loop {
-        terminal.draw(|f| ui::draw(f, &app))?;
+        if redraw {
+            terminal.draw(|f| ui::draw(f, &app))?;
+        }
+        redraw = true;
 
         tokio::select! {
             event = events.next() => {
@@ -478,6 +485,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, cli: Cli
                             }
                         }
                     }
+                    AppEvent::Resize => {}
                     AppEvent::Tick => {
                         app.clear_expired_status();
                         tick_count += 1;
@@ -607,6 +615,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, cli: Cli
             }
             Some(StatsEvent { container_id, sample }) = stats_manager.recv() => {
                 app.push_stats(container_id, sample);
+                redraw = false;
             }
             Some(outcome) = action_executor.recv() => {
                 match outcome {

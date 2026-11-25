@@ -16,6 +16,7 @@ use std::path::Path;
 use std::pin::Pin;
 
 use super::connection::ConnectionSpec;
+use super::model::{sort_networks, sort_volumes};
 
 #[derive(Clone)]
 pub struct DockerClient {
@@ -209,7 +210,9 @@ impl DockerClient {
 
     pub async fn list_volumes(&self) -> Result<Vec<Volume>> {
         let resp = self.docker.list_volumes(None::<ListVolumesOptions>).await?;
-        Ok(resp.volumes.unwrap_or_default())
+        let mut volumes = resp.volumes.unwrap_or_default();
+        sort_volumes(&mut volumes);
+        Ok(volumes)
     }
 
     pub async fn prune_images(&self) -> Result<()> {
@@ -262,7 +265,9 @@ impl DockerClient {
     }
 
     pub async fn list_networks(&self) -> Result<Vec<Network>> {
-        Ok(self.docker.list_networks(None::<ListNetworksOptions>).await?)
+        let mut networks = self.docker.list_networks(None::<ListNetworksOptions>).await?;
+        sort_networks(&mut networks);
+        Ok(networks)
     }
 
     #[allow(dead_code)]
